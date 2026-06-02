@@ -314,7 +314,13 @@ void GraphEditorComponent::onPinDragEnd(NodeComponent* node, int pin,
             }
             return false;
         };
-        if (checkPins(2, !pending_->isInput)) break;
+        // Target pins are the opposite type of the dragged pin: a dragged output
+        // pin connects to the target's input pins, and vice-versa. Use the
+        // target node's real pin count so multi-channel / mixer / splitter nodes
+        // (which have more than two pins) are fully connectable.
+        bool targetIsInput  = !pending_->isInput;
+        int  targetPinCount = targetIsInput ? n->numInputs() : n->numOutputs();
+        if (checkPins(targetPinCount, targetIsInput)) break;
     }
 
     pending_.reset();

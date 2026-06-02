@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include "engine/ClockDriftCorrector.h"
 #include <mutex>
 #include <vector>
 
@@ -17,7 +18,7 @@ public:
 
     // ── AudioProcessor interface ──────────────────────────────────────────
     const juce::String getName() const override { return "InputDevice"; }
-    void prepareToPlay(double, int) override {}
+    void prepareToPlay(double, int) override;
     void releaseResources() override {}
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) override;
 
@@ -41,4 +42,8 @@ private:
     std::vector<float>   ring_;       // [channel][frame]
     std::atomic<int>     writePos_{ 0 };
     std::atomic<int>     readPos_ { 0 };
+
+    // Compensates for drift between the capture device clock (producer) and the
+    // mix-thread clock (consumer) by occasionally dropping/holding a frame.
+    ClockDriftCorrector  drift_{ kRingFrames / 2 };
 };

@@ -12,6 +12,10 @@ public:
     // Call from the consumer thread each callback. Returns -1 (drop), 0 (pass), +1 (insert).
     int getCorrection(int currentFillSamples);
 
+    // Re-target the desired fill level (e.g. once the block size is known in
+    // prepareToPlay). Resets the hysteresis counters.
+    void setTargetFill(int targetFillSamples);
+
     void reset();
 
 private:

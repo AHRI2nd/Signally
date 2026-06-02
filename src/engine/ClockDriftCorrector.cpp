@@ -37,6 +37,12 @@ int ClockDriftCorrector::getCorrection(int currentFill)
     return 0;
 }
 
+void ClockDriftCorrector::setTargetFill(int targetFillSamples)
+{
+    targetFill_ = targetFillSamples;
+    reset();
+}
+
 void ClockDriftCorrector::reset()
 {
     consecutiveOver_  = 0;

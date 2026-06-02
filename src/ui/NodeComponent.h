@@ -26,6 +26,9 @@ public:
 
     NodeID  nodeId() const { return nodeId_; }
 
+    int  numInputs()  const { return numInputs_; }
+    int  numOutputs() const { return numOutputs_; }
+
     juce::Point<float> getPinPosition(int channelIndex, bool isInput) const;
 
     // Callbacks set by GraphEditorComponent
