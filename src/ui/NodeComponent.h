@@ -34,7 +34,7 @@ public:
     // Callbacks set by GraphEditorComponent
     std::function<void(NodeComponent*, int, bool, juce::Point<float>)> onPinDragStart;
     std::function<void(NodeComponent*, int, bool, juce::Point<float>)> onPinDragEnd;
-    std::function<void(NodeID)>                                         onRemoveRequested;
+    std::function<void(NodeID)>                                         onContextMenu;
 
     static constexpr int kPinRadius   = 6;
     static constexpr int kHeaderHeight = 22;

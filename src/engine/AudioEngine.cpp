@@ -83,6 +83,22 @@ void AudioEngine::mixThreadMain()
     if (mmTask) AvRevertMmThreadCharacteristics(mmTask);
 }
 
+void AudioEngine::reportError(const juce::String& msg)
+{
+    if (onError) onError(msg);
+}
+
+bool AudioEngine::startDeviceThread(DeviceThread& thread)
+{
+    if (thread.start())
+        return true;
+
+    auto err = thread.lastError();
+    reportError(err.isNotEmpty() ? ("Device start failed: " + err)
+                                 : "Device start failed");
+    return false;
+}
+
 void AudioEngine::applyProcessPriority()
 {
     SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
@@ -184,7 +200,7 @@ MixingGraph::NodeID AudioEngine::addInputDevice(const std::wstring& deviceId,
         [nodePtr](float** ch, int nch, int ns) { nodePtr->pushAudio(ch, nch, ns); });
 
     std::lock_guard<std::mutex> lock(deviceMutex_);
-    if (running_) thread->start();
+    if (running_) startDeviceThread(*thread);
     deviceThreads_.push_back(std::move(thread));
 
     return nodeId;
@@ -213,7 +229,7 @@ MixingGraph::NodeID AudioEngine::addOutputDevice(const std::wstring& deviceId,
         [nodePtr](float** ch, int nch, int ns) { nodePtr->pullAudio(ch, nch, ns); });
 
     std::lock_guard<std::mutex> lock(deviceMutex_);
-    if (running_) thread->start();
+    if (running_) startDeviceThread(*thread);
     deviceThreads_.push_back(std::move(thread));
 
     return nodeId;
@@ -262,8 +278,11 @@ bool AudioEngine::start()
 
     {
         std::lock_guard<std::mutex> lock(deviceMutex_);
+        // Start every device; a failure on one device (e.g. a mic already held
+        // exclusively by another app) is surfaced via onError but does not stop
+        // the remaining devices from running.
         for (auto& t : deviceThreads_)
-            t->start();
+            startDeviceThread(*t);
     }
 
     // Start the graph-driving mix thread last, once devices are feeding rings.

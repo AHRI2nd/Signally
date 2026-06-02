@@ -81,6 +81,13 @@ public:
 private:
     void applyProcessPriority();
 
+    // Forwards a message to the onError listener if one is registered.
+    void reportError(const juce::String& msg);
+
+    // Starts a device thread and reports its lastError() via onError on failure.
+    // Returns whether the thread started successfully.
+    bool startDeviceThread(DeviceThread& thread);
+
     // Dedicated real-time thread that drives the graph: it pulls captured audio
     // from InputDeviceNodes (via their ring buffers) and pushes processed audio
     // into OutputDeviceNodes — one processBlock() per period.

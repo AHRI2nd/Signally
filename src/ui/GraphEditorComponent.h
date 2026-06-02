@@ -80,6 +80,13 @@ private:
     void onPinDragEnd  (NodeComponent* node, int pin, bool isInput, juce::Point<float> pos);
     void onNodeRemove  (MixingGraph::NodeID id);
 
+    // Right-click menu for a node: remove, plus per-bus gain for Mixer nodes.
+    void showNodeContextMenu(MixingGraph::NodeID id);
+
+    // Connection hit-testing / deletion (editor coordinate space).
+    int  findConnectionAt(juce::Point<float> pos) const;
+    void removeConnectionAt(int index);
+
     AudioEngine& engine_;
 
     std::vector<std::unique_ptr<NodeComponent>> nodes_;

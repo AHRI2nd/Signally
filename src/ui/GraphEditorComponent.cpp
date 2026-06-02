@@ -1,4 +1,5 @@
 #include "GraphEditorComponent.h"
+#include "ConnectionComponent.h"
 #include "nodes/MixerNode.h"
 #include "nodes/SplitterNode.h"
 #include "nodes/VST3PluginNode.h"
@@ -38,7 +39,7 @@ void GraphEditorComponent::addNodeComponent(MixingGraph::NodeID id,
     nc->onPinDragEnd   = [this](auto* n, int pin, bool isIn, auto pos) {
         onPinDragEnd(n, pin, isIn, pos);
     };
-    nc->onRemoveRequested = [this](auto nid) { onNodeRemove(nid); };
+    nc->onContextMenu = [this](auto nid) { showNodeContextMenu(nid); };
 
     if (position.isOrigin())
         position = { 80 + (int)nodes_.size() * 30, 80 + (int)nodes_.size() * 30 };
@@ -182,7 +183,19 @@ void GraphEditorComponent::mouseDown(const juce::MouseEvent& e)
 {
     if (e.mods.isRightButtonDown())
     {
-        // Context menu to add nodes
+        // Right-clicking a connection line offers to delete it.
+        int connIdx = findConnectionAt(e.position);
+        if (connIdx >= 0)
+        {
+            juce::PopupMenu connMenu;
+            connMenu.addItem(1, "Delete Connection");
+            connMenu.showMenuAsync(juce::PopupMenu::Options{}, [this, connIdx](int result) {
+                if (result == 1) removeConnectionAt(connIdx);
+            });
+            return;
+        }
+
+        // Otherwise, context menu to add nodes.
         juce::PopupMenu menu;
         menu.addItem(1, "Add Input Device");
         menu.addItem(2, "Add Output Device (Shared)");
@@ -331,6 +344,77 @@ void GraphEditorComponent::onNodeRemove(MixingGraph::NodeID id)
 {
     engine_.removeNode(id);
     removeNodeComponent(id);
+}
+
+void GraphEditorComponent::showNodeContextMenu(MixingGraph::NodeID id)
+{
+    auto* desc = findDescriptor(id);
+
+    juce::PopupMenu menu;
+
+    // For a Mixer node, offer a per-input-bus gain submenu.
+    MixerNode* mixer = nullptr;
+    if (desc && desc->kind == NodeKind::Mixer)
+        if (auto* gn = engine_.graph().graph().getNodeForId(id))
+            mixer = dynamic_cast<MixerNode*>(gn->getProcessor());
+
+    if (mixer != nullptr)
+    {
+        static const std::pair<const char*, float> kLevels[] = {
+            { "Mute",   0.0f   }, { "-12 dB", 0.251f }, { "-6 dB",  0.501f },
+            { "0 dB",   1.0f   }, { "+6 dB",  1.995f }, { "+12 dB", 3.981f },
+        };
+
+        for (int bus = 0; bus < desc->busCount; ++bus)
+        {
+            const float current = mixer->getBusGain(bus);
+            juce::PopupMenu busMenu;
+            for (const auto& lv : kLevels)
+            {
+                const bool ticked = std::abs(current - lv.second) < 0.01f;
+                busMenu.addItem(lv.first, true, ticked,
+                                [mixer, bus, gain = lv.second] { mixer->setBusGain(bus, gain); });
+            }
+            menu.addSubMenu("Input " + juce::String(bus) + " gain", busMenu);
+        }
+        menu.addSeparator();
+    }
+
+    menu.addItem("Remove Node", [this, id] { onNodeRemove(id); });
+    menu.showMenuAsync(juce::PopupMenu::Options{});
+}
+
+int GraphEditorComponent::findConnectionAt(juce::Point<float> pos) const
+{
+    // Iterate front-to-back so the topmost (most recently added) line wins.
+    for (int i = (int)connections_.size() - 1; i >= 0; --i)
+    {
+        const auto& c = connections_[i];
+        const NodeComponent* srcNode = nullptr;
+        const NodeComponent* dstNode = nullptr;
+        for (auto& n : nodes_)
+        {
+            if (n->nodeId() == c.srcNode) srcNode = n.get();
+            if (n->nodeId() == c.dstNode) dstNode = n.get();
+        }
+        if (!srcNode || !dstNode) continue;
+
+        auto start = srcNode->getPinPosition(c.srcCh, false);
+        auto end   = dstNode->getPinPosition(c.dstCh, true);
+        if (ConnectionComponent::hitTest(ConnectionComponent::makeBezier(start, end), pos))
+            return i;
+    }
+    return -1;
+}
+
+void GraphEditorComponent::removeConnectionAt(int index)
+{
+    if (index < 0 || index >= (int)connections_.size()) return;
+
+    const auto c = connections_[index];
+    engine_.disconnect(c.srcNode, c.srcCh, c.dstNode, c.dstCh);
+    connections_.erase(connections_.begin() + index);
+    repaint();
 }
 
 // ── Session persistence ───────────────────────────────────────────────────────

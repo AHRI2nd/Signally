@@ -109,12 +109,15 @@ void NodeComponent::mouseDown(const juce::MouseEvent& e)
         if (onPinDragStart)
             onPinDragStart(this, pin, isInput, getPinPosition(pin, isInput));
     }
+    else if (e.mods.isRightButtonDown())
+    {
+        draggingPin_ = -1;
+        if (onContextMenu) onContextMenu(nodeId_);
+    }
     else
     {
         draggingPin_ = -1;
         dragger_.startDraggingComponent(this, e);
-        if (e.mods.isRightButtonDown() && onRemoveRequested)
-            onRemoveRequested(nodeId_);
     }
 }
 
