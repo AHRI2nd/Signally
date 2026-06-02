@@ -17,22 +17,22 @@ static KSDATAFORMAT_WAVEFORMATEX gCaptureFormat =
     },
     {
         WAVE_FORMAT_IEEE_FLOAT,
-        MICTRANS_CHANNELS,
-        MICTRANS_SAMPLE_RATE,
-        MICTRANS_SAMPLE_RATE * MICTRANS_CHANNELS * sizeof(float),
-        MICTRANS_CHANNELS * sizeof(float),
+        SIGNALLY_CHANNELS,
+        SIGNALLY_SAMPLE_RATE,
+        SIGNALLY_SAMPLE_RATE * SIGNALLY_CHANNELS * sizeof(float),
+        SIGNALLY_CHANNELS * sizeof(float),
         32,
         0
     }
 };
 
-// ── CMiniportWaveCyclicMicTrans ───────────────────────────────────────────────
-class CMiniportWaveCyclicMicTrans
+// ── CMiniportWaveCyclicSignally ───────────────────────────────────────────────
+class CMiniportWaveCyclicSignally
     : public IMiniportWaveCyclic,
       public CUnknown
 {
     DECLARE_STD_UNKNOWN();
-    DEFINE_STD_CONSTRUCTOR(CMiniportWaveCyclicMicTrans);
+    DEFINE_STD_CONSTRUCTOR(CMiniportWaveCyclicSignally);
 
 public:
     // IMiniport
@@ -51,17 +51,17 @@ private:
     PPORTWAVECYCLIC Port_ = nullptr;
 };
 
-// ── CMiniportStreamMicTrans ───────────────────────────────────────────────────
-class CMiniportStreamMicTrans
+// ── CMiniportStreamSignally ───────────────────────────────────────────────────
+class CMiniportStreamSignally
     : public IMiniportWaveCyclicStream,
       public CUnknown
 {
     DECLARE_STD_UNKNOWN();
-    DEFINE_STD_CONSTRUCTOR(CMiniportStreamMicTrans);
+    DEFINE_STD_CONSTRUCTOR(CMiniportStreamSignally);
 
 public:
     STDMETHODIMP_(NTSTATUS) Init(
-        CMiniportWaveCyclicMicTrans*, ULONG, BOOLEAN, PKSDATAFORMAT) ;
+        CMiniportWaveCyclicSignally*, ULONG, BOOLEAN, PKSDATAFORMAT) ;
 
     // IMiniportWaveCyclicStream
     STDMETHODIMP_(NTSTATUS) GetPosition(_Out_ PULONG pos) override;
@@ -75,7 +75,7 @@ public:
     void ServiceGroup();
 
 private:
-    CMiniportWaveCyclicMicTrans* Miniport_ = nullptr;
+    CMiniportWaveCyclicSignally* Miniport_ = nullptr;
     ULONG    Channel_          = 0;
     PVOID    DmaBuffer_        = nullptr;
     ULONG    DmaBufferSize_    = 0;
@@ -95,16 +95,16 @@ CreateMiniport(
 {
     UNREFERENCED_PARAMETER(ClassID);
 
-    *Unknown = new(PoolType, 'cmiM') CMiniportWaveCyclicMicTrans(UnknownOuter);
+    *Unknown = new(PoolType, 'cmiM') CMiniportWaveCyclicSignally(UnknownOuter);
     if (!*Unknown) return STATUS_INSUFFICIENT_RESOURCES;
     (*Unknown)->AddRef();
     return STATUS_SUCCESS;
 }
 
-// ── CMiniportWaveCyclicMicTrans impl ─────────────────────────────────────────
+// ── CMiniportWaveCyclicSignally impl ─────────────────────────────────────────
 
 STDMETHODIMP_(NTSTATUS)
-CMiniportWaveCyclicMicTrans::Init(
+CMiniportWaveCyclicSignally::Init(
     PUNKNOWN        UnknownAdapter,
     PRESOURCELIST   ResourceList,
     PPORTWAVECYCLIC Port,
@@ -120,7 +120,7 @@ CMiniportWaveCyclicMicTrans::Init(
 }
 
 STDMETHODIMP_(NTSTATUS)
-CMiniportWaveCyclicMicTrans::NewStream(
+CMiniportWaveCyclicSignally::NewStream(
     PMINIPORTWAVECYCLICSTREAM* Stream,
     PUNKNOWN                   OuterUnknown,
     POOL_TYPE                  PoolType,
@@ -132,14 +132,14 @@ CMiniportWaveCyclicMicTrans::NewStream(
 {
     if (!Capture) return STATUS_INVALID_PARAMETER;
 
-    auto* stream = new(PoolType, 'rtSM') CMiniportStreamMicTrans(OuterUnknown);
+    auto* stream = new(PoolType, 'rtSM') CMiniportStreamSignally(OuterUnknown);
     if (!stream) return STATUS_INSUFFICIENT_RESOURCES;
 
     NTSTATUS status = stream->Init(this, Pin, Capture, DataFormat);
     if (!NT_SUCCESS(status)) { stream->Release(); return status; }
 
     // Allocate DMA buffer (one second of audio)
-    ULONG bufSize = MICTRANS_SAMPLE_RATE * MICTRANS_CHANNELS * sizeof(float);
+    ULONG bufSize = SIGNALLY_SAMPLE_RATE * SIGNALLY_CHANNELS * sizeof(float);
     *DmaChannel   = nullptr; // software DMA
 
     // Create service group for notifications
@@ -151,7 +151,7 @@ CMiniportWaveCyclicMicTrans::NewStream(
 }
 
 STDMETHODIMP_(NTSTATUS)
-CMiniportWaveCyclicMicTrans::GetDescription(_Out_ PPCFILTER_DESCRIPTOR* desc)
+CMiniportWaveCyclicSignally::GetDescription(_Out_ PPCFILTER_DESCRIPTOR* desc)
 {
     // Minimal filter descriptor — one capture pin
     static PCPIN_DESCRIPTOR pinDesc[] = {
@@ -167,14 +167,14 @@ CMiniportWaveCyclicMicTrans::GetDescription(_Out_ PPCFILTER_DESCRIPTOR* desc)
 }
 
 STDMETHODIMP_(NTSTATUS)
-CMiniportWaveCyclicMicTrans::DataRangeIntersection(
+CMiniportWaveCyclicSignally::DataRangeIntersection(
     ULONG, PKSDATARANGE, PKSDATARANGE, ULONG, PVOID, PULONG) { return STATUS_NOT_IMPLEMENTED; }
 
-// ── CMiniportStreamMicTrans impl ─────────────────────────────────────────────
+// ── CMiniportStreamSignally impl ─────────────────────────────────────────────
 
 NTSTATUS
-CMiniportStreamMicTrans::Init(
-    CMiniportWaveCyclicMicTrans* miniport,
+CMiniportStreamSignally::Init(
+    CMiniportWaveCyclicSignally* miniport,
     ULONG pin, BOOLEAN capture, PKSDATAFORMAT format)
 {
     UNREFERENCED_PARAMETER(capture);
@@ -185,46 +185,46 @@ CMiniportStreamMicTrans::Init(
 }
 
 STDMETHODIMP_(NTSTATUS)
-CMiniportStreamMicTrans::SetState(KSSTATE state)
+CMiniportStreamSignally::SetState(KSSTATE state)
 {
     State_ = state;
     return STATUS_SUCCESS;
 }
 
 STDMETHODIMP_(NTSTATUS)
-CMiniportStreamMicTrans::GetPosition(_Out_ PULONG pos)
+CMiniportStreamSignally::GetPosition(_Out_ PULONG pos)
 {
     *pos = DmaPosition_;
     return STATUS_SUCCESS;
 }
 
 STDMETHODIMP_(ULONG)
-CMiniportStreamMicTrans::SetNotificationFreq(ULONG interval, PULONG framing)
+CMiniportStreamSignally::SetNotificationFreq(ULONG interval, PULONG framing)
 {
     NotificationFreq_ = interval;
-    *framing = (ULONG)((double)MICTRANS_SAMPLE_RATE * interval / 1000.0)
-               * MICTRANS_CHANNELS * sizeof(float);
+    *framing = (ULONG)((double)SIGNALLY_SAMPLE_RATE * interval / 1000.0)
+               * SIGNALLY_CHANNELS * sizeof(float);
     return interval;
 }
 
 STDMETHODIMP_(NTSTATUS)
-CMiniportStreamMicTrans::NormalizePhysicalPosition(PLONGLONG pos)
+CMiniportStreamSignally::NormalizePhysicalPosition(PLONGLONG pos)
 {
-    *pos = (*pos * MICTRANS_SAMPLE_RATE * MICTRANS_CHANNELS * sizeof(float))
+    *pos = (*pos * SIGNALLY_SAMPLE_RATE * SIGNALLY_CHANNELS * sizeof(float))
            / 10000000LL;
     return STATUS_SUCCESS;
 }
 
 STDMETHODIMP_(NTSTATUS)
-CMiniportStreamMicTrans::SetFormat(PKSDATAFORMAT) { return STATUS_SUCCESS; }
+CMiniportStreamSignally::SetFormat(PKSDATAFORMAT) { return STATUS_SUCCESS; }
 
 STDMETHODIMP_(void)
-CMiniportStreamMicTrans::Silence(PVOID buf, ULONG byteCount)
+CMiniportStreamSignally::Silence(PVOID buf, ULONG byteCount)
 {
     RtlZeroMemory(buf, byteCount);
 }
 
-void CMiniportStreamMicTrans::ServiceGroup()
+void CMiniportStreamSignally::ServiceGroup()
 {
     // Copy from shared ring buffer to DMA buffer
     // (DmaBuffer_ and SharedHeader are obtained via device extension in a real impl)

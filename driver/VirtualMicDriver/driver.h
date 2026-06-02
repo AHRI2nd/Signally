@@ -14,7 +14,7 @@ typedef struct _DEVICE_EXTENSION
 {
     // Shared memory
     PMDL                 SharedMdl;        // MDL locking the shared section
-    PMICTRANS_SHARED_HEADER SharedHeader; // mapped kernel VA
+    PSIGNALLY_SHARED_HEADER SharedHeader; // mapped kernel VA
     FLOAT*               RingBuffer;      // = (FLOAT*)(SharedHeader + 1)
 
     // Synchronisation

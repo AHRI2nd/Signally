@@ -1,12 +1,12 @@
 cmake_minimum_required(VERSION 3.22)
-project(MicTrans VERSION 1.0.0)
+project(Signally VERSION 1.0.0)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Windows only
 if(NOT WIN32)
-    message(FATAL_ERROR "MicTrans is Windows-only.")
+    message(FATAL_ERROR "Signally is Windows-only.")
 endif()
 
 # ── JUCE ──────────────────────────────────────────────────────────────────────
@@ -30,18 +30,18 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/vst3sdk/CMakeLists.txt")
 endif()
 
 # ── App target ────────────────────────────────────────────────────────────────
-juce_add_gui_app(MicTrans
-    PRODUCT_NAME        "MicTrans"
+juce_add_gui_app(Signally
+    PRODUCT_NAME        "Signally"
     VERSION             "1.0.0"
-    COMPANY_NAME        "MicTrans"
-    BUNDLE_ID           "com.mictrans.app"
+    COMPANY_NAME        "Signally"
+    BUNDLE_ID           "com.signally.app"
     NEEDS_CURL          FALSE
     NEEDS_WEB_BROWSER   FALSE
 )
 
-juce_generate_juce_header(MicTrans)
+juce_generate_juce_header(Signally)
 
-target_sources(MicTrans PRIVATE
+target_sources(Signally PRIVATE
     src/Main.cpp
     src/MainWindow.cpp
 
@@ -65,9 +65,9 @@ target_sources(MicTrans PRIVATE
     src/ui/VST3BrowserPanel.cpp
 )
 
-target_include_directories(MicTrans PRIVATE src)
+target_include_directories(Signally PRIVATE src)
 
-target_compile_definitions(MicTrans PRIVATE
+target_compile_definitions(Signally PRIVATE
     JUCE_WASAPI=1
     JUCE_ASIO=${JUCE_ASIO_ENABLED}
     JUCE_VST3_CAN_REPLACE_VST2=0
@@ -76,7 +76,7 @@ target_compile_definitions(MicTrans PRIVATE
     JUCE_WEB_BROWSER=0
 )
 
-target_link_libraries(MicTrans PRIVATE
+target_link_libraries(Signally PRIVATE
     juce::juce_audio_basics
     juce::juce_audio_devices
     juce::juce_audio_formats
@@ -97,10 +97,10 @@ target_link_libraries(MicTrans PRIVATE
 
 # MSVC-specific: enable highest optimization for audio code
 if(MSVC)
-    target_compile_options(MicTrans PRIVATE
+    target_compile_options(Signally PRIVATE
         $<$<CONFIG:Release>:/O2 /Ob2 /Oi /Ot /GL>
     )
-    target_link_options(MicTrans PRIVATE
+    target_link_options(Signally PRIVATE
         $<$<CONFIG:Release>:/LTCG>
     )
 endif()

@@ -1,10 +1,10 @@
 #include <JuceHeader.h>
 #include "MainWindow.h"
 
-class MicTransApplication : public juce::JUCEApplication
+class SignallyApplication : public juce::JUCEApplication
 {
 public:
-    const juce::String getApplicationName()    override { return "MicTrans"; }
+    const juce::String getApplicationName()    override { return "Signally"; }
     const juce::String getApplicationVersion() override { return "1.0.0"; }
     bool moreThanOneInstanceAllowed()          override { return false; }
 
@@ -29,4 +29,4 @@ private:
     std::unique_ptr<MainWindow> mainWindow_;
 };
 
-START_JUCE_APPLICATION(MicTransApplication)
+START_JUCE_APPLICATION(SignallyApplication)

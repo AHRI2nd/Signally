@@ -1,4 +1,4 @@
-# MicTrans — 빌드 가이드
+# Signally — 빌드 가이드
 
 ## 환경 요구사항
 
@@ -13,8 +13,8 @@
 ## 1. 앱 빌드
 
 ```bat
-git clone --recurse-submodules https://github.com/your/MicTrans.git
-cd MicTrans
+git clone --recurse-submodules https://github.com/your/Signally.git
+cd Signally
 
 # ASIO SDK를 third_party\ASIO_SDK\ 에 수동 배치 (Steinberg 사이트에서 다운로드)
 
@@ -22,7 +22,7 @@ cmake -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release
 ```
 
-빌드 결과: `build\Release\MicTrans.exe`
+빌드 결과: `build\Release\Signally.exe`
 
 ## 2. 가상 마이크 드라이버 빌드
 
@@ -70,6 +70,6 @@ devcon status Root\VirtualMicDriver
 ## 오디오 격리 검증 방법
 
 1. OBS Studio 실행 → "오디오 캡처" → "시스템 오디오 캡처" 추가
-2. MicTrans에서 마이크 → VST3 → Virtual Mic Output 연결
+2. Signally에서 마이크 → VST3 → Virtual Mic Output 연결
 3. OBS 오디오 미터 확인 → 파형 없음 ✅
-4. Discord에서 "MicTrans Virtual Microphone" 입력 장치 선택 → 처리된 음성 확인 ✅
+4. Discord에서 "Signally Virtual Microphone" 입력 장치 선택 → 처리된 음성 확인 ✅

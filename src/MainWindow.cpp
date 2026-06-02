@@ -43,19 +43,19 @@ MainWindow::Content::Content()
     saveBtn_.onClick = [this]
     {
         chooser_ = std::make_unique<juce::FileChooser>(
-            "Save Session", juce::File{}, "*.mictrans");
+            "Save Session", juce::File{}, "*.signally");
         chooser_->launchAsync(juce::FileBrowserComponent::saveMode
                               | juce::FileBrowserComponent::canSelectFiles,
             [this](const juce::FileChooser& fc) {
                 auto f = fc.getResult();
                 if (f != juce::File{})
-                    graphEditor_.saveSession(f.withFileExtension("mictrans"));
+                    graphEditor_.saveSession(f.withFileExtension("signally"));
             });
     };
     loadBtn_.onClick = [this]
     {
         chooser_ = std::make_unique<juce::FileChooser>(
-            "Load Session", juce::File{}, "*.mictrans");
+            "Load Session", juce::File{}, "*.signally");
         chooser_->launchAsync(juce::FileBrowserComponent::openMode
                               | juce::FileBrowserComponent::canSelectFiles,
             [this](const juce::FileChooser& fc) {
@@ -169,7 +169,7 @@ void MainWindow::Content::resized()
 // ── MainWindow ───────────────────────────────────────────────────────────────
 
 MainWindow::MainWindow()
-    : juce::DocumentWindow("MicTrans",
+    : juce::DocumentWindow("Signally",
                             juce::Colour(0xff0d1b2a),
                             juce::DocumentWindow::allButtons)
 {

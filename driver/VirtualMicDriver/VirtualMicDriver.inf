@@ -1,4 +1,4 @@
-; MicTrans Virtual Microphone Driver
+; Signally Virtual Microphone Driver
 ; Installs a WDM capture-only audio endpoint visible as a microphone.
 
 [Version]
@@ -67,11 +67,11 @@ VirtualMic.CopyFiles = 12   ; %SystemRoot%\System32\drivers
 VirtualMicDriver.sys = 1
 
 [Strings]
-ManufacturerName  = "MicTrans"
-DeviceName        = "MicTrans Virtual Audio Device"
-MicName           = "MicTrans Virtual Microphone"
-ServiceName       = "MicTrans Virtual Microphone Driver"
-DiskName          = "MicTrans Driver Disk"
+ManufacturerName  = "Signally"
+DeviceName        = "Signally Virtual Audio Device"
+MicName           = "Signally Virtual Microphone"
+ServiceName       = "Signally Virtual Microphone Driver"
+DiskName          = "Signally Driver Disk"
 KSNAME_Wave       = "Wave"
 KSCATEGORY_AUDIO  = "{6994AD04-93EF-11D0-A3CC-00A0C9223196}"
 KSCATEGORY_CAPTURE= "{65E8773D-8F56-11D0-A3B9-00A0C9223196}"

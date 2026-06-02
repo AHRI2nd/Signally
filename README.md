@@ -1,4 +1,4 @@
-# MicTrans
+# Signally
 
 A Windows audio routing application built on **WASAPI Shared Low Latency**, with a
 node-based graph editor for wiring an unlimited number of input and output devices,
@@ -18,7 +18,7 @@ Discord while staying invisible to screen recorders and capture tools (OBS, Game
   WASAPI loopback capture.
 - **VST3 hosting** — insert VST3 plugins anywhere in the processing chain.
 - **ASIO support** — direct device I/O via the Steinberg ASIO SDK.
-- **Sessions** — save and load the entire graph as a `.mictrans` file.
+- **Sessions** — save and load the entire graph as a `.signally` file.
 - **Monitoring** — live CPU load and buffer-underrun counters.
 
 ## Architecture

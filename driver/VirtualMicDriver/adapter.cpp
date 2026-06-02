@@ -1,13 +1,13 @@
-// adapter.cpp — PortCls adapter for MicTrans Virtual Microphone Driver
+// adapter.cpp — PortCls adapter for Signally Virtual Microphone Driver
 //
 // Build: WDK + Visual Studio 2022 (driver project, not app project)
 // Link:  portcls.lib, ks.lib, ksguid.lib
 
 #include "driver.h"
 
-// Device interface GUID — generated specifically for MicTrans
+// Device interface GUID — generated specifically for Signally
 // {A9B3F210-1234-5678-ABCD-EF0123456789}
-DEFINE_GUID(MICTRANS_INTERFACE_GUID,
+DEFINE_GUID(SIGNALLY_INTERFACE_GUID,
     0xa9b3f210, 0x1234, 0x5678,
     0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89);
 
@@ -47,14 +47,14 @@ AddDevice(
     NTSTATUS status;
 
     // Create the shared memory section that user-mode app will open
-    UNICODE_STRING sectionName = RTL_CONSTANT_STRING(MICTRANS_SHARED_MEM_NAME);
+    UNICODE_STRING sectionName = RTL_CONSTANT_STRING(SIGNALLY_SHARED_MEM_NAME);
     OBJECT_ATTRIBUTES oa;
     InitializeObjectAttributes(&oa, &sectionName,
                                 OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE,
                                 nullptr, nullptr);
 
     LARGE_INTEGER maxSize;
-    maxSize.QuadPart = MICTRANS_SHARED_MEM_SIZE;
+    maxSize.QuadPart = SIGNALLY_SHARED_MEM_SIZE;
 
     HANDLE sectionHandle = nullptr;
     PVOID  sectionObj    = nullptr;
@@ -70,7 +70,7 @@ AddDevice(
 
     // Map section into system space so driver can access ring buffer
     PVOID  mappedBase = nullptr;
-    SIZE_T viewSize   = MICTRANS_SHARED_MEM_SIZE;
+    SIZE_T viewSize   = SIGNALLY_SHARED_MEM_SIZE;
     if (sectionHandle)
     {
         status = ObReferenceObjectByHandle(sectionHandle, SECTION_ALL_ACCESS,
@@ -82,7 +82,7 @@ AddDevice(
     }
 
     // Create the write-notification event
-    UNICODE_STRING evtName = RTL_CONSTANT_STRING(MICTRANS_WRITE_EVENT_NAME);
+    UNICODE_STRING evtName = RTL_CONSTANT_STRING(SIGNALLY_WRITE_EVENT_NAME);
     OBJECT_ATTRIBUTES evtOa;
     InitializeObjectAttributes(&evtOa, &evtName,
                                 OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE,

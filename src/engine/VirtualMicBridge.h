@@ -8,8 +8,8 @@
 #include <vector>
 
 // Shared-memory protocol constants — must match VirtualMicDriver/shared_memory.h
-static constexpr WCHAR  kSharedMemName[]  = L"Global\\MicTransVirtualMic";
-static constexpr WCHAR  kWriteEventName[] = L"Global\\MicTransVMicWrite";
+static constexpr WCHAR  kSharedMemName[]  = L"Global\\SignallyVirtualMic";
+static constexpr WCHAR  kWriteEventName[] = L"Global\\SignallyVMicWrite";
 static constexpr int    kSharedRingFrames = 4096; // ring buffer capacity in frames
 static constexpr int    kSharedChannels   = 2;
 static constexpr int    kSharedSampleRate = 48000;
