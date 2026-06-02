@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Visual Studio WDK Driver Project for MicTrans Virtual Microphone Driver.
+
+  Prerequisites:
+    - Visual Studio 2022
+    - Windows Driver Kit (WDK) for Windows 11
+    - Spectre-mitigated libraries (recommended)
+
+  To build:
+    1. Open this project in Visual Studio 2022 (with WDK extension installed)
+    2. Set Configuration: Release, Platform: x64
+    3. Build → the output is VirtualMicDriver.sys
+
+  For development testing:
+    bcdedit /set testsigning on    (run as Admin, then reboot)
+    devcon install VirtualMicDriver.inf Root\VirtualMicDriver
+
+  For distribution:
+    Submit the driver package to Microsoft Hardware Dev Center for
+    Attestation Signing (requires EV code signing certificate).
+-->
+<Project DefaultTargets="Build"
+         xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{B1A2C3D4-E5F6-7890-ABCD-EF1234567890}</ProjectGuid>
+    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
+    <MinimumVisualStudioVersion>17.0</MinimumVisualStudioVersion>
+    <Configuration>Release</Configuration>
+    <Platform>x64</Platform>
+    <ProjectName>VirtualMicDriver</ProjectName>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Driver</ConfigurationType>
+    <DriverType>WDM</DriverType>
+    <TargetVersion>Windows10</TargetVersion>
+    <PlatformToolset>WindowsKernelModeDriver10.0</PlatformToolset>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <Import Project="$(WDKContentRoot)\build\WindowsDriver.props" />
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>
+        $(KernelModeLibPath);
+        $(DDK_INC_PATH);
+        %(AdditionalIncludeDirectories)
+      </AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>NDEBUG;_X86_;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <ExceptionHandling>false</ExceptionHandling>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <WarningLevel>Level4</WarningLevel>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>
+        portcls.lib;ks.lib;ksguid.lib;%(AdditionalDependencies)
+      </AdditionalDependencies>
+      <EntryPointSymbol>DriverEntry</EntryPointSymbol>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemGroup>
+    <ClCompile Include="adapter.cpp" />
+    <ClCompile Include="miniport.cpp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ClInclude Include="driver.h" />
+    <ClInclude Include="shared_memory.h" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="VirtualMicDriver.inf" />
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Import Project="$(WDKContentRoot)\build\WindowsDriver.targets" />
+</Project>

@@ -1,0 +1,66 @@
+# ── Build output ──────────────────────────────────────────────────────────────
+build/
+out/
+cmake-build-*/
+install/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+*.cmake
+!cmake/*.cmake          # keep our own cmake/ scripts (e.g. JUCE.cmake)
+
+# ── Visual Studio / MSBuild ─────────────────────────────────────────────────────
+.vs/
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+*.sln.docstates
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+Win32/
+ARM64/
+ipch/
+*.aps
+*.ncb
+*.opensdf
+*.sdf
+*.cachefile
+*.tlog
+*.lastbuildstate
+
+# ── WDK driver build artifacts ──────────────────────────────────────────────────
+*.sys
+*.pdb
+*.cat
+*.inf.cab
+*.cer
+*.obj
+*.lib
+*.exp
+*.ilk
+driver/**/objfre*/
+driver/**/objchk*/
+
+# ── JUCE generated ──────────────────────────────────────────────────────────────
+JuceLibraryCode/
+Builds/
+
+# ── Third-party SDKs (cannot redistribute) ──────────────────────────────────────
+third_party/ASIO_SDK/
+
+# ── Editors / OS ────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── App session files ───────────────────────────────────────────────────────────
+*.mictrans

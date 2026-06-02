@@ -1,0 +1,25 @@
+# Normalise line endings: keep LF in the repo, let Git convert on checkout.
+* text=auto
+
+# Source files — always LF in repo
+*.cpp   text eol=lf
+*.h     text eol=lf
+*.cmake text eol=lf
+*.md    text eol=lf
+CMakeLists.txt text eol=lf
+
+# Windows-specific files that tools expect with CRLF
+*.inf      text eol=crlf
+*.vcxproj  text eol=crlf
+*.sln      text eol=crlf
+*.bat      text eol=crlf
+
+# Binary files — never diff or convert
+*.sys   binary
+*.cat   binary
+*.lib   binary
+*.dll   binary
+*.vst3  binary
+*.png   binary
+*.ico   binary
+*.wav   binary
