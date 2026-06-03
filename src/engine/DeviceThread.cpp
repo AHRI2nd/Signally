@@ -297,6 +297,15 @@ bool DeviceThread::initWASAPI()
                                    ? AUDCLNT_SHAREMODE_EXCLUSIVE
                                    : AUDCLNT_SHAREMODE_SHARED;
 
+    // Pro interfaces often accept only 24-bit (not 32-bit float) in Exclusive mode,
+    // which makes Initialize fail and the device never opens. If our format isn't
+    // supported exclusively, fall back to Shared, where the audio engine converts.
+    if (shareMode == AUDCLNT_SHAREMODE_EXCLUSIVE
+        && client_->IsFormatSupported(AUDCLNT_SHAREMODE_EXCLUSIVE, &fmt, nullptr) != S_OK)
+    {
+        shareMode = AUDCLNT_SHAREMODE_SHARED;
+    }
+
     DWORD streamFlags = AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
     if (shareMode == AUDCLNT_SHAREMODE_SHARED)
     {

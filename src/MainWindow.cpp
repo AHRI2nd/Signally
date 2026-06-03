@@ -151,9 +151,12 @@ void MainWindow::Content::stopEngine()
 void MainWindow::Content::timerCallback()
 {
     if (!engineRunning_) return;
-    int    cpu = juce::roundToInt(engine_.getCpuLoad() * 100.0);
+    double cpu  = engine_.getCpuLoad() * 100.0;
     int    xrun = engine_.getUnderrunCount();
-    statusLabel_.setText("Running  |  CPU " + juce::String(cpu) + "%"
+    int    act  = engine_.getActiveDeviceCount();
+    int    tot  = engine_.getTotalDeviceCount();
+    statusLabel_.setText("Running  |  Dev " + juce::String(act) + "/" + juce::String(tot)
+                         + "  |  CPU " + juce::String(cpu, 1) + "%"
                          + "  |  Underruns " + juce::String(xrun),
                          juce::dontSendNotification);
 }

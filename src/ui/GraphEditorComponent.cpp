@@ -73,7 +73,7 @@ void GraphEditorComponent::addInputDeviceNode(const DeviceInfo& info)
 {
     // ASIO devices must use the ASIO backend; otherwise default to Exclusive capture.
     IsolationMode mode = info.isAsio ? IsolationMode::ASIO : IsolationMode::Exclusive;
-    auto id = engine_.addInputDevice(info.id, mode, 48000.0, 480, info.maxChannels);
+    auto id = engine_.addInputDevice(info.id, mode, engine_.getSampleRate(), 480, info.maxChannels);
     auto pos = nextNodePosition();
     descriptors_.push_back({ id, NodeKind::InputDevice, info.name, info.id,
                              mode, info.maxChannels, 2, {}, pos });
@@ -84,7 +84,7 @@ void GraphEditorComponent::addOutputDeviceNode(const DeviceInfo& info, Isolation
 {
     // An ASIO device always uses the ASIO backend regardless of the requested mode.
     IsolationMode actualMode = info.isAsio ? IsolationMode::ASIO : mode;
-    auto id = engine_.addOutputDevice(info.id, actualMode, 48000.0, 480, info.maxChannels);
+    auto id = engine_.addOutputDevice(info.id, actualMode, engine_.getSampleRate(), 480, info.maxChannels);
     auto pos = nextNodePosition();
     descriptors_.push_back({ id, NodeKind::OutputDevice, info.name, info.id,
                              actualMode, info.maxChannels, 2, {}, pos });

@@ -87,6 +87,8 @@ public:
     // Performance counters (read from UI thread).
     double getCpuLoad()      const { return cpuLoad_.load(); }
     int    getUnderrunCount()const { return underruns_.load(); }
+    int    getActiveDeviceCount() const { return activeDevices_.load(); }
+    int    getTotalDeviceCount()  const { return totalDevices_.load(); }
 
 private:
     void applyProcessPriority();
@@ -124,6 +126,8 @@ private:
 
     std::atomic<double> cpuLoad_  { 0.0 };
     std::atomic<int>    underruns_{ 0 };
+    std::atomic<int>    activeDevices_{ 0 };
+    std::atomic<int>    totalDevices_{ 0 };
 
     bool running_ = false;
 };

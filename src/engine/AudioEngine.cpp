@@ -243,9 +243,11 @@ MixingGraph::NodeID AudioEngine::addInputDevice(const std::wstring& deviceId,
     cfg.bufferSamples = bufferSamples;
     cfg.numChannels   = numChannels;
 
-    // WASAPI shared devices run at their native mix rate; resample to the engine
-    // rate inside the node. Exclusive/ASIO stay at the engine rate (passthrough).
-    if (mode == IsolationMode::Shared)
+    // Open WASAPI devices at their native mix rate (both Shared AND Exclusive) and
+    // resample to the engine rate inside the node. Exclusive at the engine rate
+    // (e.g. 48k) fails on a device whose hardware rate differs (e.g. 96k), so we
+    // must follow the device rate. (ASIO negotiates its own rate separately.)
+    if (mode != IsolationMode::ASIO)
     {
         double devRate = queryDeviceSampleRate(deviceId);
         if (devRate > 0.0) cfg.sampleRate = devRate;
@@ -281,9 +283,10 @@ MixingGraph::NodeID AudioEngine::addOutputDevice(const std::wstring& deviceId,
     cfg.bufferSamples = bufferSamples;
     cfg.numChannels   = numChannels;
 
-    // WASAPI shared devices run at their native mix rate; the node resamples the
-    // engine-rate audio to it. Exclusive/ASIO stay at the engine rate (passthrough).
-    if (mode == IsolationMode::Shared)
+    // Open WASAPI devices at their native mix rate (both Shared AND Exclusive); the
+    // node resamples engine-rate audio to it. Exclusive at the engine rate fails
+    // when the device hardware rate differs, so follow the device rate.
+    if (mode != IsolationMode::ASIO)
     {
         double devRate = queryDeviceSampleRate(deviceId);
         if (devRate > 0.0) cfg.sampleRate = devRate;
@@ -357,8 +360,11 @@ bool AudioEngine::start()
         // Start every device; a failure on one device (e.g. a mic already held
         // exclusively by another app) is surfaced via onError but does not stop
         // the remaining devices from running.
+        int active = 0;
         for (auto& t : deviceThreads_)
-            startDeviceThread(*t);
+            if (startDeviceThread(*t)) ++active;
+        activeDevices_.store(active);
+        totalDevices_.store(static_cast<int>(deviceThreads_.size()));
     }
 
     // Start the graph-driving mix thread last, once devices are feeding rings.
