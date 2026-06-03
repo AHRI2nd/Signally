@@ -1,6 +1,6 @@
 #include "MainWindow.h"
 
-static constexpr juce::Colour kBgColour{ 0xff0d1b2a };
+static const juce::Colour kBgColour{ 0xff0d1b2a };
 static constexpr int kLeftPanelWidth  = 220;
 static constexpr int kRightPanelWidth = 220;
 static constexpr int kToolbarHeight   = 36;

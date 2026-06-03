@@ -7,10 +7,10 @@
 #include "nodes/InputDeviceNode.h"
 #include "nodes/OutputDeviceNode.h"
 
-static constexpr juce::Colour kCanvasBg   { 0xff0d1b2a };
-static constexpr juce::Colour kGridColour { 0xff1a2d42 };
-static constexpr juce::Colour kConnColour { 0xffadd8e6 };
-static constexpr juce::Colour kPendingColour { 0xffffff80 };
+static const juce::Colour kCanvasBg   { 0xff0d1b2a };
+static const juce::Colour kGridColour { 0xff1a2d42 };
+static const juce::Colour kConnColour { 0xffadd8e6 };
+static const juce::Colour kPendingColour { 0xffffff80 };
 static constexpr int kGridSize = 24;
 
 GraphEditorComponent::GraphEditorComponent(AudioEngine& engine)
@@ -221,7 +221,7 @@ void GraphEditorComponent::mouseDown(const juce::MouseEvent& e)
                 {
                     auto chooser = std::make_shared<juce::FileChooser>(
                         "Select VST3 Plugin", juce::File{}, "*.vst3");
-                    chooser->launchAsync(juce::FileBrowserComponent::openMode, [this, chooser](auto&) {
+                    chooser->launchAsync(juce::FileBrowserComponent::openMode, [this, chooser](const juce::FileChooser&) {
                         auto file = chooser->getResult();
                         if (!file.existsAsFile()) return;
 
@@ -233,7 +233,7 @@ void GraphEditorComponent::mouseDown(const juce::MouseEvent& e)
 
                         juce::OwnedArray<juce::PluginDescription> descs;
                         for (auto* fmt : formatManager_.getFormats())
-                            fmt->findAllTypesForFile(descs, file);
+                            fmt->findAllTypesForFile(descs, file.getFullPathName());
 
                         if (!descs.isEmpty())
                             addVST3Node(*descs[0]);
@@ -267,8 +267,8 @@ void GraphEditorComponent::drawConnections(juce::Graphics& g)
     g.setColour(kConnColour);
     for (auto& c : connections_)
     {
-        auto* srcNode = nullptr;
-        auto* dstNode = nullptr;
+        NodeComponent* srcNode = nullptr;
+        NodeComponent* dstNode = nullptr;
         for (auto& n : nodes_)
         {
             if (n->nodeId() == c.srcNode) srcNode = n.get();

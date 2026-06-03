@@ -1,9 +1,8 @@
 #include "MixerNode.h"
 
 MixerNode::MixerNode(int numInputBuses, int numChannels)
-    : numInputBuses_(numInputBuses), numChannels_(numChannels)
+    : numInputBuses_(numInputBuses), numChannels_(numChannels), gains_(numInputBuses)
 {
-    gains_.resize(numInputBuses);
     for (auto& g : gains_) g.store(1.0f);
 
     juce::AudioProcessor::BusesLayout layout;

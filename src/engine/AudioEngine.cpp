@@ -33,7 +33,7 @@ void AudioEngine::mixThreadMain()
 {
     // Raise to Pro Audio MMCSS task
     DWORD taskIndex = 0;
-    HANDLE mmTask = AvSetMmThreadCharacteristics(L"Pro Audio", &taskIndex);
+    HANDLE mmTask = AvSetMmThreadCharacteristicsW(L"Pro Audio", &taskIndex);
     if (mmTask) AvSetMmThreadPriority(mmTask, AVRT_PRIORITY_CRITICAL);
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
 

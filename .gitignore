@@ -52,6 +52,10 @@ Builds/
 
 # ── Third-party SDKs (cannot redistribute) ──────────────────────────────────────
 third_party/ASIO_SDK/
+third_party/vst3sdk/
+
+# ── Local build tooling (nuget, EWDK ISO, etc. — large, machine-local) ──────────
+.tools/
 
 # ── Editors / OS ────────────────────────────────────────────────────────────────
 .idea/
@@ -63,4 +67,7 @@ Thumbs.db
 desktop.ini
 
 # ── App session files ───────────────────────────────────────────────────────────
-*.mictrans
+*.signally
+
+# ── Guide files ─────────────────────────────────────────────────────────────────
+GUIDE.md

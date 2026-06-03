@@ -1,11 +1,11 @@
 #include "NodeComponent.h"
 #include "GraphEditorComponent.h"
 
-static constexpr juce::Colour kHeaderColour  { 0xff2d4a6b };
-static constexpr juce::Colour kBodyColour    { 0xff1a2a3a };
-static constexpr juce::Colour kPinInputColour { 0xff4fc3f7 };
-static constexpr juce::Colour kPinOutputColour{ 0xffffa726 };
-static constexpr juce::Colour kBorderColour  { 0xff3d6a9e };
+static const juce::Colour kHeaderColour  { 0xff2d4a6b };
+static const juce::Colour kBodyColour    { 0xff1a2a3a };
+static const juce::Colour kPinInputColour { 0xff4fc3f7 };
+static const juce::Colour kPinOutputColour{ 0xffffa726 };
+static const juce::Colour kBorderColour  { 0xff3d6a9e };
 
 NodeComponent::NodeComponent(GraphEditorComponent& editor,
                              NodeID nodeId,

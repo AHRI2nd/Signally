@@ -2,7 +2,6 @@
 // The DMA callback reads from the shared-memory ring buffer written by the app.
 
 #include "driver.h"
-#include <msvad.h>   // for MSVAD_CYCLIC_BUFFER_SIZE (WDK sample header)
 
 // PCM format exposed to the OS: 48000Hz, 32-bit float, stereo
 static KSDATAFORMAT_WAVEFORMATEX gCaptureFormat =
