@@ -1,15 +1,19 @@
 #include "MixerNode.h"
 
+juce::AudioProcessor::BusesProperties MixerNode::makeProps(int numInputBuses, int ch)
+{
+    BusesProperties bp;
+    for (int i = 0; i < numInputBuses; ++i)
+        bp = bp.withInput("In" + juce::String(i + 1), juce::AudioChannelSet::canonicalChannelSet(ch), true);
+    bp = bp.withOutput("Output", juce::AudioChannelSet::canonicalChannelSet(ch), true);
+    return bp;
+}
+
 MixerNode::MixerNode(int numInputBuses, int numChannels)
-    : numInputBuses_(numInputBuses), numChannels_(numChannels), gains_(numInputBuses)
+    : juce::AudioProcessor(makeProps(numInputBuses, numChannels)),
+      numInputBuses_(numInputBuses), numChannels_(numChannels), gains_(numInputBuses)
 {
     for (auto& g : gains_) g.store(1.0f);
-
-    juce::AudioProcessor::BusesLayout layout;
-    for (int i = 0; i < numInputBuses; ++i)
-        layout.inputBuses.add(juce::AudioChannelSet::canonicalChannelSet(numChannels));
-    layout.outputBuses.add(juce::AudioChannelSet::canonicalChannelSet(numChannels));
-    setBusesLayout(layout);
 }
 
 void MixerNode::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)

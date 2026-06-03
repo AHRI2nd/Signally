@@ -29,9 +29,7 @@ VST3BrowserPanel::VST3BrowserPanel(GraphEditorComponent& editor)
 
     scanBtn_.onClick = [this] { scanPluginsAsync(); };
     addBtn_.onClick  = [this] { onAddPlugin(); };
-
-    // Auto-discover system VST3 plugins on startup (background, non-blocking).
-    scanPluginsAsync();
+    // Scanning is started manually via the "Scan VST3 Folders" button.
 }
 
 VST3BrowserPanel::~VST3BrowserPanel()

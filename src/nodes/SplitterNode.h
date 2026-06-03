@@ -26,6 +26,8 @@ public:
     void setStateInformation(const void*, int) override {}
 
 private:
+    static BusesProperties makeProps(int numOutputBuses, int numChannels);
+
     int numOutputBuses_;
     int numChannels_;
 };

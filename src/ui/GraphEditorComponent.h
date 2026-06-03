@@ -119,7 +119,6 @@ private:
     std::optional<PendingConn> pending_;
 
     float zoom_ = 1.0f;
-    juce::String dbg_;   // TEMP: connection diagnostics overlay
 
     juce::KnownPluginList pluginList_;
     juce::AudioPluginFormatManager formatManager_;

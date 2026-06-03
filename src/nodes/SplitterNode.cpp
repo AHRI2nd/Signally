@@ -1,13 +1,18 @@
 #include "SplitterNode.h"
 
-SplitterNode::SplitterNode(int numOutputBuses, int numChannels)
-    : numOutputBuses_(numOutputBuses), numChannels_(numChannels)
+juce::AudioProcessor::BusesProperties SplitterNode::makeProps(int numOutputBuses, int ch)
 {
-    juce::AudioProcessor::BusesLayout layout;
-    layout.inputBuses.add(juce::AudioChannelSet::canonicalChannelSet(numChannels));
+    BusesProperties bp;
+    bp = bp.withInput("Input", juce::AudioChannelSet::canonicalChannelSet(ch), true);
     for (int i = 0; i < numOutputBuses; ++i)
-        layout.outputBuses.add(juce::AudioChannelSet::canonicalChannelSet(numChannels));
-    setBusesLayout(layout);
+        bp = bp.withOutput("Out" + juce::String(i + 1), juce::AudioChannelSet::canonicalChannelSet(ch), true);
+    return bp;
+}
+
+SplitterNode::SplitterNode(int numOutputBuses, int numChannels)
+    : juce::AudioProcessor(makeProps(numOutputBuses, numChannels)),
+      numOutputBuses_(numOutputBuses), numChannels_(numChannels)
+{
 }
 
 void SplitterNode::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)

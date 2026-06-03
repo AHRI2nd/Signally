@@ -198,17 +198,6 @@ void GraphEditorComponent::paint(juce::Graphics& g)
     drawConnections(g);
     drawPendingConnection(g);
 
-    // TEMP diagnostics overlay
-    if (dbg_.isNotEmpty())
-    {
-        auto a = getLocalBounds();
-        if (auto* vp = findParentComponentOfClass<juce::Viewport>()) a = vp->getViewArea();
-        g.setColour(juce::Colours::yellow);
-        g.setFont(14.0f);
-        g.drawText("conns=" + juce::String((int)connections_.size()) + "  " + dbg_,
-                   a.getX() + 8, a.getY() + 8, a.getWidth() - 16, 20, juce::Justification::topLeft);
-    }
-
     // Empty-state hint
     if (nodes_.empty())
     {
@@ -413,9 +402,6 @@ void GraphEditorComponent::onPinDragStart(NodeComponent* node, int pin,
                                            bool isInput, juce::Point<float> pos)
 {
     pending_ = PendingConn{ node, pin, isInput, pos, pos };
-    dbg_ = "START pin=" + juce::String(pin) + (isInput ? " IN" : " OUT")
-         + " @(" + juce::String((int)pos.x) + "," + juce::String((int)pos.y) + ")";
-    repaint();
 }
 
 void GraphEditorComponent::updatePendingDrag(juce::Point<float> worldPos)
@@ -453,8 +439,6 @@ void GraphEditorComponent::onPinDragEnd(NodeComponent* node, int pin,
     }
 
     constexpr float kSnapRadius = 30.0f;
-    dbg_ = "END worldPos=(" + juce::String((int)worldPos.x) + "," + juce::String((int)worldPos.y)
-         + ") bestDist=" + juce::String((int)bestDist);
     if (bestNode != nullptr && bestDist <= kSnapRadius)
     {
         NodeComponent* srcNode = pending_->isInput ? bestNode : node;
@@ -462,14 +446,8 @@ void GraphEditorComponent::onPinDragEnd(NodeComponent* node, int pin,
         NodeComponent* dstNode = pending_->isInput ? node     : bestNode;
         int            dstPin  = pending_->isInput ? pin      : bestPin;
 
-        bool ok = engine_.connect(srcNode->nodeId(), srcPin, dstNode->nodeId(), dstPin);
-        dbg_ += ok ? " CONNECT OK" : " CONNECT FAILED";
-        if (ok)
+        if (engine_.connect(srcNode->nodeId(), srcPin, dstNode->nodeId(), dstPin))
             connections_.push_back({ srcNode->nodeId(), dstNode->nodeId(), srcPin, dstPin });
-    }
-    else
-    {
-        dbg_ += " NO TARGET";
     }
 
     pending_.reset();

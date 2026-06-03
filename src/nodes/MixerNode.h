@@ -31,6 +31,8 @@ public:
     float getBusGain(int busIndex) const;
 
 private:
+    static BusesProperties makeProps(int numInputBuses, int numChannels);
+
     int numInputBuses_;
     int numChannels_;
     std::vector<std::atomic<float>> gains_;
