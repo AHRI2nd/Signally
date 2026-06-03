@@ -63,6 +63,7 @@ private:
         int                 busCount  = 2;   // Mixer inputs / Splitter outputs
         juce::String        pluginIdentifier; // VST3 uniqueId for re-scan
         juce::Point<int>    position;
+        juce::String        pluginDescXml;    // VST3: full PluginDescription XML for reload
     };
     std::vector<NodeDescriptor> descriptors_;
 

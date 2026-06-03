@@ -17,23 +17,66 @@ void InputDeviceNode::prepareToPlay(double, int blockSize)
     readPos_ .store(0, std::memory_order_relaxed);
 }
 
+void InputDeviceNode::setResampling(double deviceRate, double engineRate)
+{
+    deviceRate_ = deviceRate;
+    engineRate_ = engineRate;
+    resampling_ = (deviceRate > 0.0 && engineRate > 0.0
+                   && std::abs(deviceRate - engineRate) > 1.0e-6);
+
+    interp_.clear();
+    rsScratch_.clear();
+    if (resampling_)
+    {
+        interp_.resize(static_cast<size_t>(numChannels_));
+        for (auto& it : interp_) it.reset();
+        rsScratch_.resize(static_cast<size_t>(numChannels_));
+    }
+}
+
 void InputDeviceNode::pushAudio(float** channels, int numChannels, int numSamples)
 {
     const int ch = juce::jmin(numChannels, numChannels_);
 
     // Producer (device thread) owns writePos_; it only reads readPos_.
-    int       wp = writePos_.load(std::memory_order_relaxed);
-    const int rp = readPos_ .load(std::memory_order_acquire);
+    long long       wp = writePos_.load(std::memory_order_relaxed);
+    const long long rp = readPos_ .load(std::memory_order_acquire);
 
-    for (int i = 0; i < numSamples; ++i)
+    if (resampling_ && ch > 0)
     {
-        if (wp - rp >= kRingFrames)
-            break; // ring full — drop remaining incoming frames rather than corrupt unread data
+        // Convert device-rate input → engine-rate, then write to the ring.
+        const double speedRatio = deviceRate_ / engineRate_;          // input/output
+        const int    outCount   = (int) std::floor((double) numSamples / speedRatio);
+        if (outCount <= 0) return;
 
-        const int idx = wp % kRingFrames;
         for (int c = 0; c < ch; ++c)
-            ring_[c * kRingFrames + idx] = channels[c][i];
-        ++wp;
+        {
+            if ((int) rsScratch_[c].size() < outCount)
+                rsScratch_[c].assign(static_cast<size_t>(outCount), 0.0f);
+            interp_[c].process(speedRatio, channels[c], rsScratch_[c].data(), outCount);
+        }
+
+        for (int i = 0; i < outCount; ++i)
+        {
+            if (wp - rp >= kRingFrames) break;
+            const int idx = static_cast<int>(wp % kRingFrames);
+            for (int c = 0; c < ch; ++c)
+                ring_[c * kRingFrames + idx] = rsScratch_[c][static_cast<size_t>(i)];
+            ++wp;
+        }
+    }
+    else
+    {
+        for (int i = 0; i < numSamples; ++i)
+        {
+            if (wp - rp >= kRingFrames)
+                break; // ring full — drop remaining incoming frames rather than corrupt unread data
+
+            const int idx = static_cast<int>(wp % kRingFrames);
+            for (int c = 0; c < ch; ++c)
+                ring_[c * kRingFrames + idx] = channels[c][i];
+            ++wp;
+        }
     }
 
     writePos_.store(wp, std::memory_order_release);
@@ -44,12 +87,12 @@ void InputDeviceNode::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     const int numSamples = buffer.getNumSamples();
 
     // Consumer (mix thread) owns readPos_.
-    const int wp = writePos_.load(std::memory_order_acquire);
-    int       rp = readPos_ .load(std::memory_order_relaxed);
-    int       available = wp - rp;
+    const long long wp = writePos_.load(std::memory_order_acquire);
+    long long       rp = readPos_ .load(std::memory_order_relaxed);
+    long long       available = wp - rp;
 
     // Once-per-block clock-drift correction against the target fill level.
-    const int corr = drift_.getCorrection(available);
+    const int corr = drift_.getCorrection(static_cast<int>(available));
     if (corr < 0 && available > numSamples)
     {
         ++rp; --available;   // drop one captured frame → shed accumulated latency
@@ -61,7 +104,7 @@ void InputDeviceNode::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
 
     for (int i = 0; i < numSamples; ++i)
     {
-        const int idx = ((rp % kRingFrames) + kRingFrames) % kRingFrames;
+        const int idx = static_cast<int>(((rp % kRingFrames) + kRingFrames) % kRingFrames);
         for (int c = 0; c < numChannels_; ++c)
             buffer.setSample(c, i, (available > 0) ? ring_[c * kRingFrames + idx] : 0.0f);
 

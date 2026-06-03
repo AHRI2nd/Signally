@@ -11,8 +11,11 @@
 #include <functional>
 #include <string>
 
-// Isolation mode for an output device endpoint.
-enum class IsolationMode { Shared, Exclusive };
+// Isolation mode for a device endpoint.
+//  Shared    — WASAPI shared (low latency); audible to WASAPI loopback capture.
+//  Exclusive — WASAPI exclusive; bypasses the mixer, not loopback-capturable.
+//  ASIO      — Steinberg ASIO via JUCE; bypasses the Windows audio engine entirely.
+enum class IsolationMode { Shared, Exclusive, ASIO };
 
 // Direction of this device thread.
 enum class DeviceDirection { Input, Output };
@@ -22,10 +25,10 @@ enum class DeviceDirection { Input, Output };
 // Output: callback must fill buffer with samples to render.
 using AudioCallback = std::function<void(float** channels, int numChannels, int numSamples)>;
 
-// Manages a single WASAPI device endpoint on a dedicated real-time thread.
-// For Input: Exclusive capture or Shared capture.
-// For Output: Shared Low Latency render or Exclusive render.
-class DeviceThread
+// Manages a single device endpoint.
+//  WASAPI (Shared/Exclusive): a dedicated real-time thread drives IAudioClient.
+//  ASIO: a JUCE AudioIODevice drives its own thread and forwards via the callback.
+class DeviceThread : private juce::AudioIODeviceCallback
 {
 public:
     struct Config
@@ -59,6 +62,20 @@ private:
     bool initWASAPI();
     void releaseWASAPI();
 
+    // ── ASIO backend (used when isolationMode == ASIO) ────────────────────────
+    bool startASIO();
+    void stopASIO();
+
+    // juce::AudioIODeviceCallback
+    void audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
+                                          int numInputChannels,
+                                          float* const* outputChannelData,
+                                          int numOutputChannels,
+                                          int numSamples,
+                                          const juce::AudioIODeviceCallbackContext& context) override;
+    void audioDeviceAboutToStart(juce::AudioIODevice* device) override;
+    void audioDeviceStopped() override;
+
     Config         config_;
     AudioCallback  callback_;
 
@@ -76,4 +93,9 @@ private:
 
     // Interleaved staging buffer shared between WASAPI and callback
     std::vector<float> staging_;
+
+    // ASIO device + reusable channel-pointer scratch (filled in the callback).
+    std::unique_ptr<juce::AudioIODeviceType> asioType_;
+    std::unique_ptr<juce::AudioIODevice>     asioDevice_;
+    std::vector<float*>                      asioChanPtrs_;
 };

@@ -42,6 +42,12 @@ public:
     // numSamples must be <= kSharedRingFrames.
     void write(float* const* channels, int numChannels, int numSamples);
 
+    // Restrict which process may open the virtual-mic capture pin.
+    //   0 (default) → any consumer (Discord, etc.) may open it.
+    //   non-zero    → only that PID may open it; the driver denies all others.
+    // Stored in the shared header's reserved[0], read by the kernel driver.
+    void setAllowedConsumerPid(unsigned long pid);
+
 private:
     HANDLE            mappingHandle_ = nullptr;
     void*             mapping_       = nullptr;

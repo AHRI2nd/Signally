@@ -63,3 +63,9 @@ void VirtualMicBridge::write(float* const* channels, int numChannels, int numSam
 
     if (writeEvent_) SetEvent(writeEvent_);
 }
+
+void VirtualMicBridge::setAllowedConsumerPid(unsigned long pid)
+{
+    // reserved[0] is the agreed slot for the access-control PID (see driver.h).
+    if (header_) header_->reserved[0] = static_cast<DWORD>(pid);
+}

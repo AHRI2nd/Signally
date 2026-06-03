@@ -1,6 +1,5 @@
 #pragma once
 #include <JuceHeader.h>
-#include <functional>
 #include <memory>
 
 // Thin wrapper around AudioProcessorGraph that owns the graph lifecycle,
@@ -27,10 +26,8 @@ public:
     // Process one block. Called from the engine's mix thread.
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi);
 
-    // Serialisation
-    juce::ValueTree toValueTree() const;
-    void            fromValueTree(const juce::ValueTree& tree,
-                                  std::function<std::unique_ptr<juce::AudioProcessor>(const juce::ValueTree&)> factory);
+    // NOTE: graph serialisation lives in GraphEditorComponent (JSON .signally
+    // sessions), which owns the NodeDescriptor metadata needed to recreate nodes.
 
     juce::AudioProcessorGraph& graph() { return graph_; }
 

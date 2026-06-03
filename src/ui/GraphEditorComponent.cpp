@@ -69,21 +69,23 @@ void GraphEditorComponent::removeNodeComponent(MixingGraph::NodeID id)
 
 void GraphEditorComponent::addInputDeviceNode(const DeviceInfo& info)
 {
-    auto id = engine_.addInputDevice(info.id,
-                                      IsolationMode::Exclusive,
-                                      48000.0, 480, info.maxChannels);
+    // ASIO devices must use the ASIO backend; otherwise default to Exclusive capture.
+    IsolationMode mode = info.isAsio ? IsolationMode::ASIO : IsolationMode::Exclusive;
+    auto id = engine_.addInputDevice(info.id, mode, 48000.0, 480, info.maxChannels);
     auto pos = nextNodePosition();
     descriptors_.push_back({ id, NodeKind::InputDevice, info.name, info.id,
-                             IsolationMode::Exclusive, info.maxChannels, 2, {}, pos });
+                             mode, info.maxChannels, 2, {}, pos });
     addNodeComponent(id, info.name, 0, info.maxChannels, pos);
 }
 
 void GraphEditorComponent::addOutputDeviceNode(const DeviceInfo& info, IsolationMode mode)
 {
-    auto id = engine_.addOutputDevice(info.id, mode, 48000.0, 480, info.maxChannels);
+    // An ASIO device always uses the ASIO backend regardless of the requested mode.
+    IsolationMode actualMode = info.isAsio ? IsolationMode::ASIO : mode;
+    auto id = engine_.addOutputDevice(info.id, actualMode, 48000.0, 480, info.maxChannels);
     auto pos = nextNodePosition();
     descriptors_.push_back({ id, NodeKind::OutputDevice, info.name, info.id,
-                             mode, info.maxChannels, 2, {}, pos });
+                             actualMode, info.maxChannels, 2, {}, pos });
     addNodeComponent(id, info.name, info.maxChannels, 0, pos);
 }
 
@@ -144,6 +146,8 @@ void GraphEditorComponent::addVST3Node(const juce::PluginDescription& desc)
 
     NodeDescriptor d{ id, NodeKind::VST3, pname, {},
                       IsolationMode::Shared, 2, 2, desc.createIdentifierString(), pos };
+    if (auto descXml = desc.createXml())
+        d.pluginDescXml = descXml->toString();
     descriptors_.push_back(d);
     addNodeComponent(id, pname, ins, outs, pos);
 }
@@ -443,6 +447,20 @@ void GraphEditorComponent::saveSession(const juce::File& file)
         o->setProperty("plugin",    d.pluginIdentifier);
         o->setProperty("x",         pos.x);
         o->setProperty("y",         pos.y);
+
+        // VST3: persist the full plugin description plus its live state so the
+        // exact plugin can be recreated and restored on load.
+        if (d.kind == NodeKind::VST3)
+        {
+            o->setProperty("pluginDesc", d.pluginDescXml);
+            if (auto* gn = engine_.graph().graph().getNodeForId(d.id))
+            {
+                juce::MemoryBlock mb;
+                gn->getProcessor()->getStateInformation(mb);
+                o->setProperty("pluginState", mb.toBase64Encoding());
+            }
+        }
+
         nodesArr.add(juce::var(o.get()));
     }
     root->setProperty("nodes", nodesArr);
@@ -528,9 +546,41 @@ void GraphEditorComponent::loadSession(const juce::File& file)
                 }
                 case NodeKind::VST3:
                 {
-                    // VST3 nodes require re-scan; skipped if not in known list.
-                    // (A production version would persist the full plugin state.)
-                    continue;
+                    auto descXml = v.getProperty("pluginDesc", "").toString();
+                    if (descXml.isEmpty()) continue; // legacy session without plugin info
+
+                    juce::PluginDescription pd;
+                    if (auto xml = juce::parseXML(descXml))
+                        pd.loadFromXml(*xml);
+
+                    if (!formatsRegistered_)
+                    {
+                        formatManager_.addDefaultFormats();
+                        formatsRegistered_ = true;
+                    }
+
+                    juce::String errMsg;
+                    auto instance = formatManager_.createPluginInstance(pd, 48000.0, 480, errMsg);
+                    if (!instance) continue; // plugin no longer available on this machine
+
+                    // Restore the plugin's saved state.
+                    auto stateB64 = v.getProperty("pluginState", "").toString();
+                    if (stateB64.isNotEmpty())
+                    {
+                        juce::MemoryBlock mb;
+                        mb.fromBase64Encoding(stateB64);
+                        instance->setStateInformation(mb.getData(), (int)mb.getSize());
+                    }
+
+                    int ins  = instance->getTotalNumInputChannels();
+                    int outs = instance->getTotalNumOutputChannels();
+
+                    newId = engine_.graph().addNode(std::make_unique<VST3PluginNode>(std::move(instance)));
+                    descriptors_.push_back({ newId, kind, name, {}, iso, ch, 2,
+                                             pd.createIdentifierString(), {x,y} });
+                    descriptors_.back().pluginDescXml = descXml;
+                    addNodeComponent(newId, name, ins, outs, {x,y});
+                    break;
                 }
             }
             idMap[savedId] = newId;

@@ -11,6 +11,9 @@ DEFINE_GUID(SIGNALLY_INTERFACE_GUID,
     0xa9b3f210, 0x1234, 0x5678,
     0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89);
 
+// Single-instance shared-memory context (declared extern in driver.h).
+SIGNALLY_SHARED g_SignallyShared = { 0 };
+
 // ── DriverEntry ───────────────────────────────────────────────────────────────
 
 extern "C"
@@ -35,6 +38,18 @@ VOID
 DriverUnload(_In_ PDRIVER_OBJECT DriverObject)
 {
     UNREFERENCED_PARAMETER(DriverObject);
+
+    // Release the shared section + event mapped in AddDevice.
+    if (g_SignallyShared.Header != nullptr)
+        MmUnmapViewInSystemSpace(g_SignallyShared.Header);
+    if (g_SignallyShared.SectionObject != nullptr)
+        ObDereferenceObject(g_SignallyShared.SectionObject);
+    if (g_SignallyShared.SectionHandle != nullptr)
+        ZwClose(g_SignallyShared.SectionHandle);
+    if (g_SignallyShared.WriteEvent != nullptr)
+        ObDereferenceObject(g_SignallyShared.WriteEvent);
+
+    RtlZeroMemory(&g_SignallyShared, sizeof(g_SignallyShared));
 }
 
 // ── AddDevice ─────────────────────────────────────────────────────────────────
@@ -81,6 +96,23 @@ AddDevice(
         }
     }
 
+    // Publish the shared-memory layout for the capture stream to consume.
+    if (NT_SUCCESS(status) && mappedBase != nullptr)
+    {
+        g_SignallyShared.SectionHandle = sectionHandle;
+        g_SignallyShared.SectionObject = sectionObj;
+        g_SignallyShared.Header        = reinterpret_cast<PSIGNALLY_SHARED_HEADER>(mappedBase);
+        g_SignallyShared.RingBuffer    = reinterpret_cast<FLOAT*>(g_SignallyShared.Header + 1);
+
+        // Initialise the header so the ring is well-defined before the app attaches.
+        g_SignallyShared.Header->WritePos   = 0;
+        g_SignallyShared.Header->ReadPos    = 0;
+        g_SignallyShared.Header->SampleRate = SIGNALLY_SAMPLE_RATE;
+        g_SignallyShared.Header->Channels   = SIGNALLY_CHANNELS;
+        RtlZeroMemory((PVOID)g_SignallyShared.Header->Reserved,
+                      sizeof(g_SignallyShared.Header->Reserved));
+    }
+
     // Create the write-notification event
     UNICODE_STRING evtName = RTL_CONSTANT_STRING(SIGNALLY_WRITE_EVENT_NAME);
     OBJECT_ATTRIBUTES evtOa;
@@ -97,6 +129,7 @@ AddDevice(
                                    KernelMode, reinterpret_cast<PVOID*>(&writeEvent),
                                    nullptr);
         ZwClose(evtHandle);
+        g_SignallyShared.WriteEvent = writeEvent;
     }
 
     // Let PortCls create the FDO and call our StartDevice

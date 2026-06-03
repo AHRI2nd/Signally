@@ -99,6 +99,38 @@ bool AudioEngine::startDeviceThread(DeviceThread& thread)
     return false;
 }
 
+double AudioEngine::queryDeviceSampleRate(const std::wstring& deviceId)
+{
+    if (deviceId.empty())
+        return 0.0;
+
+    IMMDeviceEnumerator* enumerator = nullptr;
+    if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr,
+                                CLSCTX_ALL, IID_PPV_ARGS(&enumerator))))
+        return 0.0;
+
+    double rate = 0.0;
+    IMMDevice* dev = nullptr;
+    if (SUCCEEDED(enumerator->GetDevice(deviceId.c_str(), &dev)) && dev)
+    {
+        IAudioClient* client = nullptr;
+        if (SUCCEEDED(dev->Activate(__uuidof(IAudioClient), CLSCTX_ALL,
+                                    nullptr, reinterpret_cast<void**>(&client))))
+        {
+            WAVEFORMATEX* mixFmt = nullptr;
+            if (SUCCEEDED(client->GetMixFormat(&mixFmt)) && mixFmt)
+            {
+                rate = static_cast<double>(mixFmt->nSamplesPerSec);
+                CoTaskMemFree(mixFmt);
+            }
+            client->Release();
+        }
+        dev->Release();
+    }
+    enumerator->Release();
+    return rate;
+}
+
 void AudioEngine::applyProcessPriority()
 {
     SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
@@ -174,6 +206,26 @@ std::vector<DeviceInfo> AudioEngine::enumerateDevices(DeviceDirection direction)
 
     collection->Release();
     enumerator->Release();
+
+    // Append ASIO devices (keyed by name). A single ASIO driver is full-duplex,
+    // so the same name may appear in both the input and output lists.
+    if (auto asioType = std::unique_ptr<juce::AudioIODeviceType>(
+            juce::AudioIODeviceType::createAudioIODeviceType_ASIO()))
+    {
+        asioType->scanForDevices();
+        const bool wantInputs = (direction == DeviceDirection::Input);
+        for (auto& nm : asioType->getDeviceNames(wantInputs))
+        {
+            DeviceInfo di;
+            di.id          = std::wstring(nm.toWideCharPointer());
+            di.name        = "[ASIO] " + nm;
+            di.direction   = direction;
+            di.maxChannels = 2;
+            di.isAsio      = true;
+            result.push_back(std::move(di));
+        }
+    }
+
     return result;
 }
 
@@ -191,8 +243,17 @@ MixingGraph::NodeID AudioEngine::addInputDevice(const std::wstring& deviceId,
     cfg.bufferSamples = bufferSamples;
     cfg.numChannels   = numChannels;
 
+    // WASAPI shared devices run at their native mix rate; resample to the engine
+    // rate inside the node. Exclusive/ASIO stay at the engine rate (passthrough).
+    if (mode == IsolationMode::Shared)
+    {
+        double devRate = queryDeviceSampleRate(deviceId);
+        if (devRate > 0.0) cfg.sampleRate = devRate;
+    }
+
     auto node = std::make_unique<InputDeviceNode>(numChannels);
     InputDeviceNode* nodePtr = node.get();
+    nodePtr->setResampling(cfg.sampleRate, sampleRate);
 
     auto nodeId = graph_.addNode(std::move(node));
 
@@ -220,8 +281,17 @@ MixingGraph::NodeID AudioEngine::addOutputDevice(const std::wstring& deviceId,
     cfg.bufferSamples = bufferSamples;
     cfg.numChannels   = numChannels;
 
+    // WASAPI shared devices run at their native mix rate; the node resamples the
+    // engine-rate audio to it. Exclusive/ASIO stay at the engine rate (passthrough).
+    if (mode == IsolationMode::Shared)
+    {
+        double devRate = queryDeviceSampleRate(deviceId);
+        if (devRate > 0.0) cfg.sampleRate = devRate;
+    }
+
     auto node = std::make_unique<OutputDeviceNode>(numChannels);
     OutputDeviceNode* nodePtr = node.get();
+    nodePtr->setResampling(cfg.sampleRate, sampleRate);
 
     auto nodeId = graph_.addNode(std::move(node));
 

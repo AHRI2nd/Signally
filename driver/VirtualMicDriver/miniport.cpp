@@ -58,6 +58,7 @@ class CMiniportStreamSignally
 {
     DECLARE_STD_UNKNOWN();
     DEFINE_STD_CONSTRUCTOR(CMiniportStreamSignally);
+    ~CMiniportStreamSignally();
 
 public:
     STDMETHODIMP_(NTSTATUS) Init(
@@ -132,17 +133,28 @@ CMiniportWaveCyclicSignally::NewStream(
 {
     if (!Capture) return STATUS_INVALID_PARAMETER;
 
+    // Optional consumer allow-list: if the app advertised a specific PID, deny
+    // every other process that tries to open the capture pin (max isolation).
+    if (g_SignallyShared.Header != nullptr)
+    {
+        LONG allowed = (LONG) g_SignallyShared.Header->Reserved[SIGNALLY_ALLOWED_PID_INDEX];
+        if (allowed != 0 && (LONG)(ULONG_PTR) PsGetCurrentProcessId() != allowed)
+            return STATUS_ACCESS_DENIED;
+    }
+
     auto* stream = new(PoolType, 'rtSM') CMiniportStreamSignally(OuterUnknown);
     if (!stream) return STATUS_INSUFFICIENT_RESOURCES;
 
+    // Init allocates the cyclic DMA buffer the OS will read captured audio from.
     NTSTATUS status = stream->Init(this, Pin, Capture, DataFormat);
     if (!NT_SUCCESS(status)) { stream->Release(); return status; }
 
-    // Allocate DMA buffer (one second of audio)
-    ULONG bufSize = SIGNALLY_SAMPLE_RATE * SIGNALLY_CHANNELS * sizeof(float);
-    *DmaChannel   = nullptr; // software DMA
+    // NOTE: a production WaveCyclic miniport returns an IDmaChannel whose buffer
+    // IS the cyclic capture buffer (see WDK 'msvad'/'sysvad'). Here the stream
+    // owns the buffer directly; *DmaChannel stays null (software-emulated DMA).
+    *DmaChannel = nullptr;
 
-    // Create service group for notifications
+    // Service group drives periodic ServiceGroup() notifications.
     status = PcNewServiceGroup(ServiceGroup, nullptr);
     if (!NT_SUCCESS(status)) { stream->Release(); return status; }
 
@@ -150,25 +162,92 @@ CMiniportWaveCyclicSignally::NewStream(
     return STATUS_SUCCESS;
 }
 
+// Supported capture data range: PCM IEEE-float, 48 kHz, stereo, 32-bit.
+static KSDATARANGE_AUDIO gCaptureDataRange =
+{
+    {
+        sizeof(KSDATARANGE_AUDIO),
+        0, 0, 0,
+        { STATICGUIDOF(KSDATAFORMAT_TYPE_AUDIO) },
+        { STATICGUIDOF(KSDATAFORMAT_SUBTYPE_IEEE_FLOAT) },
+        { STATICGUIDOF(KSDATAFORMAT_SPECIFIER_WAVEFORMATEX) }
+    },
+    SIGNALLY_CHANNELS,           // MaximumChannels
+    32, 32,                      // Min/Max bits per sample
+    SIGNALLY_SAMPLE_RATE,        // MinimumSampleFrequency
+    SIGNALLY_SAMPLE_RATE         // MaximumSampleFrequency
+};
+static PKSDATARANGE gCaptureDataRanges[] = { (PKSDATARANGE)&gCaptureDataRange };
+
+// The capture pin's KS interface/category GUIDs (KSCATEGORY_AUDIO + _CAPTURE).
+static GUID gPinCategory_Capture = { STATIC_KSCATEGORY_CAPTURE };
+static GUID gPinCategory_Audio   = { STATIC_KSCATEGORY_AUDIO };
+
 STDMETHODIMP_(NTSTATUS)
 CMiniportWaveCyclicSignally::GetDescription(_Out_ PPCFILTER_DESCRIPTOR* desc)
 {
-    // Minimal filter descriptor — one capture pin
-    static PCPIN_DESCRIPTOR pinDesc[] = {
-        { 1, 1, 0, nullptr, { /* bridge pin */ } }
+    // One capture (source) pin exposing the float/48k/stereo data range.
+    static PCPIN_DESCRIPTOR pinDesc[] =
+    {
+        {
+            1, 1, 0,            // MaxGlobalInstanceCount, MaxFilterInstanceCount, MinFilterInstanceCount
+            nullptr,            // AutomationTable
+            {
+                0, nullptr,                                   // Interfaces (filled by PortCls)
+                0, nullptr,                                   // Mediums
+                SIZEOF_ARRAY(gCaptureDataRanges),             // DataRangesCount
+                gCaptureDataRanges,                           // DataRanges
+                KSPIN_DATAFLOW_OUT,                           // capture = data flows OUT of the pin
+                KSPIN_COMMUNICATION_SINK,
+                &gPinCategory_Capture,                        // Category
+                nullptr,                                      // Name
+                0                                             // Reserved
+            }
+        }
     };
-    static PCFILTER_DESCRIPTOR filterDesc = {
-        0, nullptr, sizeof(PCPIN_DESCRIPTOR),
+
+    static PCFILTER_DESCRIPTOR filterDesc =
+    {
+        0, nullptr,                       // Version, AutomationTable
+        sizeof(PCPIN_DESCRIPTOR),
         SIZEOF_ARRAY(pinDesc), pinDesc,
-        0, nullptr, 0, nullptr
+        0, nullptr,                       // Nodes
+        0, nullptr                        // Connections / Categories
     };
+
     *desc = &filterDesc;
     return STATUS_SUCCESS;
 }
 
 STDMETHODIMP_(NTSTATUS)
 CMiniportWaveCyclicSignally::DataRangeIntersection(
-    ULONG, PKSDATARANGE, PKSDATARANGE, ULONG, PVOID, PULONG) { return STATUS_NOT_IMPLEMENTED; }
+    ULONG          PinId,
+    PKSDATARANGE   DataRange,
+    PKSDATARANGE   MatchingDataRange,
+    ULONG          OutputBufferLength,
+    PVOID          ResultantFormat,
+    PULONG         ResultantFormatLength)
+{
+    UNREFERENCED_PARAMETER(PinId);
+    UNREFERENCED_PARAMETER(DataRange);
+    UNREFERENCED_PARAMETER(MatchingDataRange);
+
+    const ULONG required = sizeof(KSDATAFORMAT_WAVEFORMATEX);
+
+    // Caller probes for the size first.
+    if (OutputBufferLength == 0)
+    {
+        *ResultantFormatLength = required;
+        return STATUS_BUFFER_OVERFLOW;
+    }
+    if (OutputBufferLength < required)
+        return STATUS_BUFFER_TOO_SMALL;
+
+    // We only support exactly gCaptureFormat — hand it back.
+    RtlCopyMemory(ResultantFormat, &gCaptureFormat, required);
+    *ResultantFormatLength = required;
+    return STATUS_SUCCESS;
+}
 
 // ── CMiniportStreamSignally impl ─────────────────────────────────────────────
 
@@ -181,7 +260,27 @@ CMiniportStreamSignally::Init(
     UNREFERENCED_PARAMETER(format);
     Miniport_ = miniport;
     Channel_  = pin;
+
+    // Allocate the cyclic capture buffer (one second of float/48k/stereo).
+    DmaBufferSize_ = SIGNALLY_SAMPLE_RATE * SIGNALLY_CHANNELS * sizeof(float);
+    DmaBuffer_     = ExAllocatePool2(POOL_FLAG_NON_PAGED, DmaBufferSize_, 'fubD');
+    if (DmaBuffer_ == nullptr)
+    {
+        DmaBufferSize_ = 0;
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    RtlZeroMemory(DmaBuffer_, DmaBufferSize_);
+    DmaPosition_ = 0;
     return STATUS_SUCCESS;
+}
+
+CMiniportStreamSignally::~CMiniportStreamSignally()
+{
+    if (DmaBuffer_ != nullptr)
+    {
+        ExFreePoolWithTag(DmaBuffer_, 'fubD');
+        DmaBuffer_ = nullptr;
+    }
 }
 
 STDMETHODIMP_(NTSTATUS)
@@ -226,7 +325,56 @@ CMiniportStreamSignally::Silence(PVOID buf, ULONG byteCount)
 
 void CMiniportStreamSignally::ServiceGroup()
 {
-    // Copy from shared ring buffer to DMA buffer
-    // (DmaBuffer_ and SharedHeader are obtained via device extension in a real impl)
-    // Placeholder: in production, obtain via IoGetDeviceObjectPointer + DevExt
+    // Pull audio the app wrote into the shared ring and stage it in the cyclic
+    // capture buffer for the OS to read. Runs at each PortCls notification.
+    if (State_ != KSSTATE_RUN)
+        return;
+
+    PSIGNALLY_SHARED_HEADER hdr  = g_SignallyShared.Header;
+    FLOAT*                  ring = g_SignallyShared.RingBuffer;
+    FLOAT*                  dma  = reinterpret_cast<FLOAT*>(DmaBuffer_);
+    if (hdr == nullptr || ring == nullptr || dma == nullptr)
+        return;
+
+    const ULONG frameBytes  = SIGNALLY_CHANNELS * sizeof(float);
+    const ULONG dmaFrames   = DmaBufferSize_ / frameBytes;
+    if (dmaFrames == 0)
+        return;
+
+    // Frames to produce for this notification interval.
+    ULONG framesThisTick = (ULONG)(((ULONGLONG) SIGNALLY_SAMPLE_RATE * NotificationFreq_) / 1000);
+    if (framesThisTick == 0)
+        framesThisTick = 1;
+
+    // Snapshot positions (app increments WritePos; we own ReadPos).
+    LONG wp = hdr->WritePos;
+    LONG rp = hdr->ReadPos;
+
+    for (ULONG i = 0; i < framesThisTick; ++i)
+    {
+        const ULONG dmaFrame = (DmaPosition_ / frameBytes) % dmaFrames;
+        FLOAT* dst = dma + (SIZE_T) dmaFrame * SIGNALLY_CHANNELS;
+
+        if (rp != wp)
+        {
+            const ULONG srcFrame = (ULONG)((ULONG) rp % SIGNALLY_RING_FRAMES);
+            const FLOAT* src = ring + (SIZE_T) srcFrame * SIGNALLY_CHANNELS;
+            for (ULONG c = 0; c < SIGNALLY_CHANNELS; ++c)
+                dst[c] = src[c];
+            ++rp;
+        }
+        else
+        {
+            // Ring empty (app under-running) → emit silence to keep the clock moving.
+            for (ULONG c = 0; c < SIGNALLY_CHANNELS; ++c)
+                dst[c] = 0.0f;
+        }
+
+        DmaPosition_ += frameBytes;
+        if (DmaPosition_ >= DmaBufferSize_)
+            DmaPosition_ = 0;
+    }
+
+    // Publish how much of the ring we consumed.
+    hdr->ReadPos = rp;
 }

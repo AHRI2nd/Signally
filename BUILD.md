@@ -36,6 +36,17 @@ driver\VirtualMicDriver\VirtualMicDriver.vcxproj
 
 ## 3. 드라이버 설치 (개발/테스트)
 
+가장 간단한 방법은 동봉된 헬퍼 스크립트를 **관리자 권한 + WDK가 설치된 개발자 명령 프롬프트**에서
+실행하는 것입니다 (빌드 → 테스트 서명 → 인증서 신뢰 → 테스트 서명 모드 → 설치를 한 번에 수행):
+
+```bat
+cd driver\VirtualMicDriver
+..\dev-install.bat
+REM 재부팅 후 testsigning 적용됨
+```
+
+수동으로 하려면:
+
 ```bat
 # 테스트 서명 모드 활성화 (관리자 명령 프롬프트, 재부팅 필요)
 bcdedit /set testsigning on
@@ -45,7 +56,15 @@ devcon install driver\VirtualMicDriver\VirtualMicDriver.inf Root\VirtualMicDrive
 
 # 확인
 devcon status Root\VirtualMicDriver
+
+# 제거
+devcon remove Root\VirtualMicDriver
 ```
+
+> **참고 (구현 상태)**: 커널 드라이버는 공유 메모리 프로토콜·캡처 핀 디스크립터·포맷 협상·
+> 링버퍼→DMA 데이터 경로·PID 접근 제어까지 구현되어 있으나, PortCls의 `IDmaChannel` 객체와
+> 서비스 그룹 타이머 등록, 토폴로지 필터는 WDK `sysvad` 샘플을 참고해 실기에서 빌드·검증해야
+> 합니다 (개발 PC에 WDK 필요).
 
 ## 4. 드라이버 배포용 서명 (Attestation Signing)
 

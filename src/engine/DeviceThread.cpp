@@ -30,6 +30,9 @@ bool DeviceThread::start()
 {
     if (running_.load()) return true;
 
+    if (config_.isolationMode == IsolationMode::ASIO)
+        return startASIO();
+
     if (!initWASAPI())
         return false;
 
@@ -49,6 +52,14 @@ bool DeviceThread::start()
 void DeviceThread::stop()
 {
     if (!running_.load()) return;
+
+    if (asioDevice_ != nullptr)
+    {
+        stopASIO();
+        running_.store(false);
+        return;
+    }
+
     SetEvent(shutdownEvt_);
     if (thread_)
     {
@@ -58,6 +69,98 @@ void DeviceThread::stop()
     }
     running_.store(false);
     releaseWASAPI();
+}
+
+// ── ASIO backend ──────────────────────────────────────────────────────────────
+
+bool DeviceThread::startASIO()
+{
+    asioType_.reset(juce::AudioIODeviceType::createAudioIODeviceType_ASIO());
+    if (asioType_ == nullptr)
+    {
+        lastError_ = "ASIO support is not built into this binary";
+        return false;
+    }
+    asioType_->scanForDevices();
+
+    const bool   isInput = (config_.direction == DeviceDirection::Input);
+    juce::String devName(config_.deviceId.c_str()); // ASIO devices are keyed by name
+
+    // For an output node create (outputName, ""), for input ("", inputName).
+    asioDevice_.reset(asioType_->createDevice(isInput ? juce::String() : devName,
+                                              isInput ? devName : juce::String()));
+    if (asioDevice_ == nullptr)
+    {
+        lastError_ = "ASIO device not found: " + devName;
+        asioType_.reset();
+        return false;
+    }
+
+    juce::BigInteger inChannels, outChannels;
+    if (isInput) inChannels .setRange(0, config_.numChannels, true);
+    else         outChannels.setRange(0, config_.numChannels, true);
+
+    juce::String err = asioDevice_->open(inChannels, outChannels,
+                                         config_.sampleRate, config_.bufferSamples);
+    if (err.isNotEmpty())
+    {
+        lastError_ = "ASIO open failed: " + err;
+        asioDevice_.reset();
+        asioType_.reset();
+        return false;
+    }
+
+    running_.store(true);
+    asioDevice_->start(this); // JUCE runs its own real-time thread
+    return true;
+}
+
+void DeviceThread::stopASIO()
+{
+    if (asioDevice_ != nullptr)
+    {
+        asioDevice_->stop();
+        asioDevice_->close();
+        asioDevice_.reset();
+    }
+    asioType_.reset();
+}
+
+void DeviceThread::audioDeviceAboutToStart(juce::AudioIODevice*)
+{
+    asioChanPtrs_.assign(static_cast<size_t>(config_.numChannels), nullptr);
+}
+
+void DeviceThread::audioDeviceStopped() {}
+
+void DeviceThread::audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
+                                                    int numInputChannels,
+                                                    float* const* outputChannelData,
+                                                    int numOutputChannels,
+                                                    int numSamples,
+                                                    const juce::AudioIODeviceCallbackContext&)
+{
+    if (config_.direction == DeviceDirection::Input)
+    {
+        const int ch = juce::jmin(numInputChannels, config_.numChannels);
+        if (static_cast<int>(asioChanPtrs_.size()) < ch)
+            asioChanPtrs_.resize(static_cast<size_t>(ch));
+        for (int c = 0; c < ch; ++c)
+            asioChanPtrs_[c] = const_cast<float*>(inputChannelData[c]); // pushAudio only reads
+        if (callback_ && ch > 0)
+            callback_(asioChanPtrs_.data(), ch, numSamples);
+    }
+    else
+    {
+        // Start from silence so unused channels render clean.
+        for (int c = 0; c < numOutputChannels; ++c)
+            if (outputChannelData[c] != nullptr)
+                juce::FloatVectorOperations::clear(outputChannelData[c], numSamples);
+
+        const int ch = juce::jmin(numOutputChannels, config_.numChannels);
+        if (callback_ && ch > 0)
+            callback_(const_cast<float**>(outputChannelData), ch, numSamples);
+    }
 }
 
 DWORD WINAPI DeviceThread::threadProc(LPVOID param)
@@ -195,11 +298,14 @@ bool DeviceThread::initWASAPI()
                                    : AUDCLNT_SHAREMODE_SHARED;
 
     DWORD streamFlags = AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
-    if (config_.direction == DeviceDirection::Input && shareMode == AUDCLNT_SHAREMODE_SHARED)
-        streamFlags |= AUDCLNT_STREAMFLAGS_LOOPBACK; // never used for mic input, but guard
-    // Remove LOOPBACK for actual capture:
-    if (config_.direction == DeviceDirection::Input)
-        streamFlags = AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
+    if (shareMode == AUDCLNT_SHAREMODE_SHARED)
+    {
+        // Let the Windows audio engine convert between our float/48k request and
+        // the device's actual mix format (bit depth, channel mask, sample rate)
+        // so shared-mode Initialize succeeds even when the formats differ.
+        streamFlags |= AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM
+                     | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
+    }
 
     hr = client_->Initialize(shareMode, streamFlags, period,
                               (shareMode == AUDCLNT_SHAREMODE_EXCLUSIVE) ? period : 0,

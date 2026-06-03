@@ -22,6 +22,7 @@ struct DeviceInfo
     juce::String name;
     DeviceDirection direction;
     int maxChannels;
+    bool isAsio = false;   // true → id holds the ASIO device name, use IsolationMode::ASIO
 };
 
 // AudioEngine owns all DeviceThreads, the MixingGraph, and the VirtualMicBridge.
@@ -87,6 +88,9 @@ private:
     // Starts a device thread and reports its lastError() via onError on failure.
     // Returns whether the thread started successfully.
     bool startDeviceThread(DeviceThread& thread);
+
+    // Returns a WASAPI device's shared mix-format sample rate, or 0.0 on failure.
+    double queryDeviceSampleRate(const std::wstring& deviceId);
 
     // Dedicated real-time thread that drives the graph: it pulls captured audio
     // from InputDeviceNodes (via their ring buffers) and pushes processed audio
