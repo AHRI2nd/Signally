@@ -37,9 +37,9 @@ public:
     std::function<void(NodeID)>                                         onContextMenu;
 
     static constexpr int kPinRadius   = 6;
-    static constexpr int kHeaderHeight = 22;
-    static constexpr int kPinSpacing   = 18;
-    static constexpr int kMinWidth     = 120;
+    static constexpr int kHeaderHeight = 26;
+    static constexpr int kPinSpacing   = 22;
+    static constexpr int kMinWidth     = 150;
 
 protected:
     void paint(juce::Graphics& g) override;

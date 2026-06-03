@@ -1,5 +1,6 @@
 #include <JuceHeader.h>
 #include "MainWindow.h"
+#include "ui/SignallyLookAndFeel.h"
 
 class SignallyApplication : public juce::JUCEApplication
 {
@@ -10,12 +11,14 @@ public:
 
     void initialise(const juce::String&) override
     {
+        juce::LookAndFeel::setDefaultLookAndFeel(&lookAndFeel_);
         mainWindow_ = std::make_unique<MainWindow>();
     }
 
     void shutdown() override
     {
         mainWindow_.reset();
+        juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
     }
 
     void systemRequestedQuit() override
@@ -26,6 +29,7 @@ public:
     void anotherInstanceStarted(const juce::String&) override {}
 
 private:
+    SignallyLookAndFeel         lookAndFeel_;   // installed before the window, destroyed after
     std::unique_ptr<MainWindow> mainWindow_;
 };
 

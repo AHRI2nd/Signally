@@ -1,6 +1,6 @@
 #include "MainWindow.h"
 
-static const juce::Colour kBgColour{ 0xff0d1b2a };
+static const juce::Colour kBgColour{ 0xff1c1f26 };
 static constexpr int kLeftPanelWidth  = 220;
 static constexpr int kRightPanelWidth = 220;
 static constexpr int kToolbarHeight   = 36;
@@ -19,9 +19,9 @@ MainWindow::Content::Content()
     addAndMakeVisible(devicePanel_);
     addAndMakeVisible(vst3Panel_);
 
-    startBtn_.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2e7d32));
+    startBtn_.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2ea043));
     startBtn_.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-    stopBtn_ .setColour(juce::TextButton::buttonColourId, juce::Colour(0xffc62828));
+    stopBtn_ .setColour(juce::TextButton::buttonColourId, juce::Colour(0xffda3633));
     stopBtn_ .setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     stopBtn_.setEnabled(false);
 
@@ -29,12 +29,40 @@ MainWindow::Content::Content()
     statusLabel_.setFont(juce::Font(12.0f));
 
     auto styleToolBtn = [this](juce::TextButton& b) {
-        b.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1d3557));
+        b.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff343b47));
         b.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
         addAndMakeVisible(b);
     };
     styleToolBtn(saveBtn_);
     styleToolBtn(loadBtn_);
+
+    // ── Format selectors (sample rate + virtual-mic bit depth) ────────────────
+    auto styleCombo = [this](juce::ComboBox& c) {
+        c.setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff282d36));
+        c.setColour(juce::ComboBox::textColourId,       juce::Colours::white);
+        c.setColour(juce::ComboBox::arrowColourId,      juce::Colours::lightgrey);
+        addAndMakeVisible(c);
+    };
+
+    sampleRateBox_.addItem("44.1 kHz", 1);
+    sampleRateBox_.addItem("48 kHz",   2);
+    sampleRateBox_.addItem("96 kHz",   3);
+    sampleRateBox_.setSelectedId(2, juce::dontSendNotification); // 48 kHz default
+    sampleRateBox_.onChange = [this] {
+        int sr = 48000;
+        switch (sampleRateBox_.getSelectedId()) { case 1: sr = 44100; break; case 3: sr = 96000; break; default: sr = 48000; }
+        engine_.setSampleRate((double) sr);
+    };
+    styleCombo(sampleRateBox_);
+
+    bitDepthBox_.addItem("16-bit",        16);
+    bitDepthBox_.addItem("24-bit",        24);
+    bitDepthBox_.addItem("32-bit float",  32);
+    bitDepthBox_.setSelectedId(32, juce::dontSendNotification); // float passthrough default
+    bitDepthBox_.onChange = [this] {
+        engine_.setMicBitDepth(bitDepthBox_.getSelectedId());
+    };
+    styleCombo(bitDepthBox_);
 
     addAndMakeVisible(startBtn_);
     addAndMakeVisible(stopBtn_);
@@ -71,6 +99,8 @@ MainWindow::Content::Content()
         {
             startBtn_.setEnabled(false);
             stopBtn_ .setEnabled(true);
+            sampleRateBox_.setEnabled(false); // format is locked while running
+            bitDepthBox_  .setEnabled(false);
             statusLabel_.setText("Engine running", juce::dontSendNotification);
         }
     };
@@ -79,6 +109,8 @@ MainWindow::Content::Content()
         stopEngine();
         startBtn_.setEnabled(true);
         stopBtn_ .setEnabled(false);
+        sampleRateBox_.setEnabled(true);
+        bitDepthBox_  .setEnabled(true);
         statusLabel_.setText("Engine stopped", juce::dontSendNotification);
     };
 
@@ -131,11 +163,11 @@ void MainWindow::Content::paint(juce::Graphics& g)
     g.fillAll(kBgColour);
 
     // Toolbar separator
-    g.setColour(juce::Colour(0xff1a2d42));
+    g.setColour(juce::Colour(0xff14161b));
     g.fillRect(0, 0, getWidth(), kToolbarHeight);
 
     // Panel dividers
-    g.setColour(juce::Colour(0xff1a3557));
+    g.setColour(juce::Colour(0xff2a2f3a));
     g.drawVerticalLine(kLeftPanelWidth, kToolbarHeight, (float)getHeight());
     g.drawVerticalLine(getWidth() - kRightPanelWidth, kToolbarHeight, (float)getHeight());
 }
@@ -151,6 +183,10 @@ void MainWindow::Content::resized()
     saveBtn_    .setBounds(toolbar.removeFromLeft(70));
     toolbar.removeFromLeft(4);
     loadBtn_    .setBounds(toolbar.removeFromLeft(70));
+    toolbar.removeFromLeft(8);
+    sampleRateBox_.setBounds(toolbar.removeFromLeft(90));
+    toolbar.removeFromLeft(4);
+    bitDepthBox_  .setBounds(toolbar.removeFromLeft(100));
     toolbar.removeFromLeft(8);
     statusLabel_.setBounds(toolbar);
 

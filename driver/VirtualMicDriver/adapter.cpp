@@ -3,6 +3,11 @@
 // Build: WDK + Visual Studio 2022 (driver project, not app project)
 // Link:  portcls.lib, ks.lib, ksguid.lib
 
+// Generate GUID instances (CLSID_PortWaveRT, CLSID_PortTopology,
+// IID_IMiniport*, etc.) in this single translation unit. initguid.h must be
+// included before the headers that DEFINE_GUID those names (pulled in via driver.h).
+#include <ntddk.h>
+#include <initguid.h>
 #include "driver.h"
 
 // Device interface GUID — generated specifically for Signally
@@ -13,6 +18,15 @@ DEFINE_GUID(SIGNALLY_INTERFACE_GUID,
 
 // Single-instance shared-memory context (declared extern in driver.h).
 SIGNALLY_SHARED g_SignallyShared = { 0 };
+
+// ── Kernel C++ operator new/delete ────────────────────────────────────────────
+// PortCls miniports are allocated with placement-new( pool, tag ); the kernel
+// CRT does not provide these, so define them over ExAllocatePool2 / ExFreePool.
+void* __cdecl operator new(size_t size, POOL_FLAGS poolFlags, ULONG tag)
+{
+    return (size > 0) ? ExAllocatePool2(poolFlags, size, tag) : nullptr;
+}
+void __cdecl operator delete(void* ptr, POOL_FLAGS, ULONG) { if (ptr) ExFreePool(ptr); }
 
 // ── DriverEntry ───────────────────────────────────────────────────────────────
 
@@ -113,23 +127,23 @@ AddDevice(
                       sizeof(g_SignallyShared.Header->Reserved));
     }
 
-    // Create the write-notification event
+    // Create the named write-notification event. IoCreateNotificationEvent
+    // creates (or opens) the event and returns a PKEVENT plus a handle; we take
+    // an extra object reference so the event survives after the handle closes.
     UNICODE_STRING evtName = RTL_CONSTANT_STRING(SIGNALLY_WRITE_EVENT_NAME);
-    OBJECT_ATTRIBUTES evtOa;
-    InitializeObjectAttributes(&evtOa, &evtName,
-                                OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE,
-                                nullptr, nullptr);
     HANDLE evtHandle = nullptr;
-    PKEVENT writeEvent = nullptr;
-    status = ZwCreateEvent(&evtHandle, EVENT_ALL_ACCESS, &evtOa,
-                            NotificationEvent, FALSE);
-    if (NT_SUCCESS(status))
+    PKEVENT writeEvent = IoCreateNotificationEvent(&evtName, &evtHandle);
+    if (writeEvent != nullptr)
     {
-        ObReferenceObjectByHandle(evtHandle, EVENT_ALL_ACCESS, *ExEventObjectType,
-                                   KernelMode, reinterpret_cast<PVOID*>(&writeEvent),
-                                   nullptr);
+        PKEVENT refEvent = nullptr;
+        if (NT_SUCCESS(ObReferenceObjectByHandle(evtHandle, EVENT_MODIFY_STATE,
+                *ExEventObjectType, KernelMode,
+                reinterpret_cast<PVOID*>(&refEvent), nullptr)))
+        {
+            g_SignallyShared.WriteEvent = refEvent;
+        }
+        KeClearEvent(writeEvent);
         ZwClose(evtHandle);
-        g_SignallyShared.WriteEvent = writeEvent;
     }
 
     // Let PortCls create the FDO and call our StartDevice.

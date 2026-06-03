@@ -20,18 +20,24 @@ VST3BrowserPanel::VST3BrowserPanel(GraphEditorComponent& editor)
     addAndMakeVisible(statusLabel_);
 
     auto styleBtn = [this](juce::TextButton& btn) {
-        btn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1d3557));
+        btn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff343b47));
         btn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
         addAndMakeVisible(btn);
     };
     styleBtn(scanBtn_);
     styleBtn(addBtn_);
 
-    scanBtn_.onClick = [this] { scanPlugins(); };
+    scanBtn_.onClick = [this] { scanPluginsAsync(); };
     addBtn_.onClick  = [this] { onAddPlugin(); };
+
+    // Auto-discover system VST3 plugins on startup (background, non-blocking).
+    scanPluginsAsync();
 }
 
-VST3BrowserPanel::~VST3BrowserPanel() = default;
+VST3BrowserPanel::~VST3BrowserPanel()
+{
+    if (scanner_) scanner_->stopThread(3000);
+}
 
 void VST3BrowserPanel::resized()
 {
@@ -43,11 +49,17 @@ void VST3BrowserPanel::resized()
     statusLabel_.setBounds(area.removeFromTop(20));
 }
 
-void VST3BrowserPanel::scanPlugins()
+void VST3BrowserPanel::scanPluginsAsync()
 {
-    statusLabel_.setText("Scanning...", juce::dontSendNotification);
+    if (scanning_.exchange(true)) return;  // a scan is already running
+    statusLabel_.setText("Scanning VST3...", juce::dontSendNotification);
+    scanner_ = std::make_unique<Scanner>(*this);
+    scanner_->startThread();
+}
 
-    // Default VST3 search paths on Windows
+void VST3BrowserPanel::doScan(juce::Thread& thread)
+{
+    // System VST3 search paths on Windows.
     juce::FileSearchPath searchPath;
     searchPath.add(juce::File("C:\\Program Files\\Common Files\\VST3"));
     searchPath.add(juce::File("C:\\Program Files (x86)\\Common Files\\VST3"));
@@ -55,15 +67,27 @@ void VST3BrowserPanel::scanPlugins()
                         .getChildFile("VST3");
     if (userVST3.isDirectory()) searchPath.add(userVST3);
 
-    juce::PluginDirectoryScanner scanner(knownList_, *formatManager_.getFormat(0),
-                                          searchPath, true, {});
-    juce::String nextPlugin;
-    while (scanner.scanNextFile(true, nextPlugin))
-        statusLabel_.setText("Scanning: " + nextPlugin, juce::dontSendNotification);
+    auto* fmt = formatManager_.getFormat(0);
+    if (fmt == nullptr) { scanning_ = false; return; }
 
-    pluginList_.updateContent();
-    statusLabel_.setText(juce::String(knownList_.getNumTypes()) + " plugins found",
-                          juce::dontSendNotification);
+    juce::PluginDirectoryScanner scanner(knownList_, *fmt, searchPath, true, {});
+    juce::Component::SafePointer<VST3BrowserPanel> safe(this);
+
+    juce::String nextPlugin;
+    while (!thread.threadShouldExit() && scanner.scanNextFile(true, nextPlugin))
+    {
+        juce::MessageManager::callAsync([safe, nextPlugin] {
+            if (safe) safe->statusLabel_.setText("Scanning: " + nextPlugin, juce::dontSendNotification);
+        });
+    }
+
+    juce::MessageManager::callAsync([safe] {
+        if (safe == nullptr) return;
+        safe->pluginList_.updateContent();
+        safe->statusLabel_.setText(juce::String(safe->knownList_.getNumTypes()) + " plugins found",
+                                   juce::dontSendNotification);
+        safe->scanning_ = false;
+    });
 }
 
 void VST3BrowserPanel::onAddPlugin()

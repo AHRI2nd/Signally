@@ -40,6 +40,8 @@ private:
         juce::TextButton       stopBtn_ { "Stop Engine" };
         juce::TextButton       saveBtn_ { "Save" };
         juce::TextButton       loadBtn_ { "Load" };
+        juce::ComboBox         sampleRateBox_;   // mix + virtual-mic sample rate
+        juce::ComboBox         bitDepthBox_;     // virtual-mic OS output bit depth
         juce::Label            statusLabel_;
         std::unique_ptr<juce::FileChooser> chooser_;
         bool                   engineRunning_ = false;

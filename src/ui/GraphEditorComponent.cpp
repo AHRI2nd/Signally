@@ -7,16 +7,17 @@
 #include "nodes/InputDeviceNode.h"
 #include "nodes/OutputDeviceNode.h"
 
-static const juce::Colour kCanvasBg   { 0xff0d1b2a };
-static const juce::Colour kGridColour { 0xff1a2d42 };
-static const juce::Colour kConnColour { 0xffadd8e6 };
-static const juce::Colour kPendingColour { 0xffffff80 };
+static const juce::Colour kCanvasBg   { 0xff16181d };  // neutral slate
+static const juce::Colour kGridColour { 0xff242832 };
+static const juce::Colour kConnColour { 0xff6ea8fe };  // soft blue
+static const juce::Colour kPendingColour { 0xfff2c14e };  // warm amber
 static constexpr int kGridSize = 24;
 
 GraphEditorComponent::GraphEditorComponent(AudioEngine& engine)
     : engine_(engine)
 {
     setSize(2000, 1400);
+    setWantsKeyboardFocus(true);     // receive Ctrl +/- zoom keys
     startTimer(60); // repaint at ~60 Hz for connection preview
 }
 
@@ -46,6 +47,7 @@ void GraphEditorComponent::addNodeComponent(MixingGraph::NodeID id,
 
     nc->setTopLeftPosition(position);
     addAndMakeVisible(nc);
+    updateCanvasBounds();
     repaint();
 }
 
@@ -161,30 +163,146 @@ GraphEditorComponent::NodeDescriptor* GraphEditorComponent::findDescriptor(Mixin
 
 juce::Point<int> GraphEditorComponent::nextNodePosition() const
 {
-    int n = (int)nodes_.size();
-    return { 80 + (n % 6) * 180, 80 + (n / 6) * 160 };
+    // Centre new nodes in the currently-visible viewport area, staggering each
+    // one slightly so successive additions don't perfectly overlap.
+    int n = (int) nodes_.size();
+    juce::Point<int> centre(getWidth() / 2, getHeight() / 2);
+    if (auto* vp = findParentComponentOfClass<juce::Viewport>())
+        centre = vp->getViewArea().getCentre();
+
+    const int stagger = (n % 6) * 26;
+    return centre + juce::Point<int>(stagger - 65 - NodeComponent::kMinWidth / 2,
+                                     stagger - 65);
 }
 
 void GraphEditorComponent::paint(juce::Graphics& g)
 {
-    // Canvas background
-    g.fillAll(kCanvasBg);
+    // Canvas background — vertical gradient
+    g.setGradientFill(juce::ColourGradient(
+        kCanvasBg.brighter(0.05f), 0.0f, 0.0f,
+        kCanvasBg.darker(0.12f),   0.0f, (float) getHeight(), false));
+    g.fillRect(getLocalBounds());
 
-    // Grid
-    g.setColour(kGridColour);
+    // Grid — minor lines, with brighter major lines every 4 cells
     for (int x = 0; x < getWidth(); x += kGridSize)
-        g.drawVerticalLine(x, 0.0f, (float)getHeight());
+    {
+        g.setColour((x % (kGridSize * 4) == 0) ? kGridColour.brighter(0.45f) : kGridColour);
+        g.drawVerticalLine(x, 0.0f, (float) getHeight());
+    }
     for (int y = 0; y < getHeight(); y += kGridSize)
-        g.drawHorizontalLine(y, 0.0f, (float)getWidth());
+    {
+        g.setColour((y % (kGridSize * 4) == 0) ? kGridColour.brighter(0.45f) : kGridColour);
+        g.drawHorizontalLine(y, 0.0f, (float) getWidth());
+    }
 
     drawConnections(g);
     drawPendingConnection(g);
+
+    // TEMP diagnostics overlay
+    if (dbg_.isNotEmpty())
+    {
+        auto a = getLocalBounds();
+        if (auto* vp = findParentComponentOfClass<juce::Viewport>()) a = vp->getViewArea();
+        g.setColour(juce::Colours::yellow);
+        g.setFont(14.0f);
+        g.drawText("conns=" + juce::String((int)connections_.size()) + "  " + dbg_,
+                   a.getX() + 8, a.getY() + 8, a.getWidth() - 16, 20, juce::Justification::topLeft);
+    }
+
+    // Empty-state hint
+    if (nodes_.empty())
+    {
+        auto area = getLocalBounds();
+        if (auto* vp = findParentComponentOfClass<juce::Viewport>())
+            area = vp->getViewArea();
+        g.setColour(juce::Colours::white.withAlpha(0.22f));
+        g.setFont(juce::Font(17.0f));
+        g.drawFittedText("Add a device from the left panel,\n"
+                         "then drag pin to pin to connect.\n\n"
+                         "Ctrl + scroll to zoom",
+                         area, juce::Justification::centred, 4);
+    }
 }
 
 void GraphEditorComponent::resized() {}
 
+void GraphEditorComponent::setZoom(float newZoom)
+{
+    zoom_ = juce::jlimit(0.35f, 3.0f, newZoom);
+    // Scale around the top-left; the enclosing Viewport handles panning.
+    setTransform(juce::AffineTransform::scale(zoom_));
+    updateCanvasBounds();
+}
+
+void GraphEditorComponent::updateCanvasBounds()
+{
+    // Bounding box of all node components (logical coords).
+    juce::Rectangle<int> content;
+    for (auto& n : nodes_)
+        content = content.getUnion(n->getBounds());
+
+    // Logical size needed to fill the visible viewport at the current zoom.
+    int vw = 1200, vh = 800;
+    if (auto* vp = findParentComponentOfClass<juce::Viewport>())
+    {
+        vw = vp->getViewWidth();
+        vh = vp->getViewHeight();
+    }
+    const int visW = (int) std::ceil(vw / zoom_);
+    const int visH = (int) std::ceil(vh / zoom_);
+
+    // Zoom OUT (zoom_<1) → visW/visH grow → canvas expands.
+    // Zoom IN  (zoom_>1) → visW/visH shrink → canvas follows node content if any
+    //   node lies beyond the viewport (scrollable), else shrinks to fit.
+    const int w = juce::jmax(visW, content.getRight()  + 300);
+    const int h = juce::jmax(visH, content.getBottom() + 300);
+
+    if (w != getWidth() || h != getHeight())
+        setSize(w, h);
+}
+
+void GraphEditorComponent::mouseWheelMove(const juce::MouseEvent& e,
+                                          const juce::MouseWheelDetails& wheel)
+{
+    if (e.mods.isCommandDown())  // Ctrl + wheel = zoom
+    {
+        setZoom(zoom_ * (1.0f + wheel.deltaY * 0.6f));
+        return;
+    }
+    // Otherwise let the enclosing Viewport scroll as usual.
+    if (auto* vp = findParentComponentOfClass<juce::Viewport>())
+        vp->mouseWheelMove(e.getEventRelativeTo(vp), wheel);
+}
+
+bool GraphEditorComponent::keyPressed(const juce::KeyPress& key)
+{
+    if (key.getModifiers().isCommandDown())  // Ctrl on Windows
+    {
+        const auto code = key.getKeyCode();
+        const auto ch   = key.getTextCharacter();
+        if (ch == '+' || ch == '=' || code == juce::KeyPress::numberPadAdd)
+        {
+            setZoom(zoom_ * 1.1f);
+            return true;
+        }
+        if (ch == '-' || ch == '_' || code == juce::KeyPress::numberPadSubtract)
+        {
+            setZoom(zoom_ / 1.1f);
+            return true;
+        }
+        if (ch == '0')
+        {
+            setZoom(1.0f);
+            return true;
+        }
+    }
+    return false;
+}
+
 void GraphEditorComponent::mouseDown(const juce::MouseEvent& e)
 {
+    grabKeyboardFocus();  // ensure Ctrl +/- zoom keys reach this component
+
     if (e.mods.isRightButtonDown())
     {
         // Right-clicking a connection line offers to delete it.
@@ -295,6 +413,18 @@ void GraphEditorComponent::onPinDragStart(NodeComponent* node, int pin,
                                            bool isInput, juce::Point<float> pos)
 {
     pending_ = PendingConn{ node, pin, isInput, pos, pos };
+    dbg_ = "START pin=" + juce::String(pin) + (isInput ? " IN" : " OUT")
+         + " @(" + juce::String((int)pos.x) + "," + juce::String((int)pos.y) + ")";
+    repaint();
+}
+
+void GraphEditorComponent::updatePendingDrag(juce::Point<float> worldPos)
+{
+    if (pending_.has_value())
+    {
+        pending_->currentPos = worldPos;
+        repaint();
+    }
 }
 
 void GraphEditorComponent::onPinDragEnd(NodeComponent* node, int pin,
@@ -302,42 +432,44 @@ void GraphEditorComponent::onPinDragEnd(NodeComponent* node, int pin,
 {
     if (!pending_.has_value()) return;
 
-    // Find a pin under worldPos
+    // Target pins are the opposite type of the dragged pin (output→input).
+    const bool  targetIsInput = !pending_->isInput;
+
+    // Snap to the NEAREST compatible pin within a forgiving radius, rather than
+    // requiring the drop to land exactly on the small pin circle.
+    NodeComponent* bestNode = nullptr;
+    int            bestPin  = -1;
+    float          bestDist = 1.0e9f;
+
     for (auto& n : nodes_)
     {
-        if (n.get() == node) continue;
-        // Check each pin of n
-        auto checkPins = [&](int numPins, bool checkInput)
+        if (n.get() == node) continue;  // no self-connection
+        const int count = targetIsInput ? n->numInputs() : n->numOutputs();
+        for (int i = 0; i < count; ++i)
         {
-            for (int i = 0; i < numPins; ++i)
-            {
-                auto pinPos = n->getPinPosition(i, checkInput);
-                if (worldPos.getDistanceFrom(pinPos) <= NodeComponent::kPinRadius + 5)
-                {
-                    // Make connection: output → input
-                    NodeComponent* srcNode = pending_->isInput ? n.get()      : node;
-                    int            srcPin  = pending_->isInput ? i            : pin;
-                    NodeComponent* dstNode = pending_->isInput ? node         : n.get();
-                    int            dstPin  = pending_->isInput ? pin          : i;
+            float d = worldPos.getDistanceFrom(n->getPinPosition(i, targetIsInput));
+            if (d < bestDist) { bestDist = d; bestNode = n.get(); bestPin = i; }
+        }
+    }
 
-                    if (engine_.connect(srcNode->nodeId(), srcPin,
-                                        dstNode->nodeId(), dstPin))
-                    {
-                        connections_.push_back({
-                            srcNode->nodeId(), dstNode->nodeId(), srcPin, dstPin });
-                    }
-                    return true;
-                }
-            }
-            return false;
-        };
-        // Target pins are the opposite type of the dragged pin: a dragged output
-        // pin connects to the target's input pins, and vice-versa. Use the
-        // target node's real pin count so multi-channel / mixer / splitter nodes
-        // (which have more than two pins) are fully connectable.
-        bool targetIsInput  = !pending_->isInput;
-        int  targetPinCount = targetIsInput ? n->numInputs() : n->numOutputs();
-        if (checkPins(targetPinCount, targetIsInput)) break;
+    constexpr float kSnapRadius = 30.0f;
+    dbg_ = "END worldPos=(" + juce::String((int)worldPos.x) + "," + juce::String((int)worldPos.y)
+         + ") bestDist=" + juce::String((int)bestDist);
+    if (bestNode != nullptr && bestDist <= kSnapRadius)
+    {
+        NodeComponent* srcNode = pending_->isInput ? bestNode : node;
+        int            srcPin  = pending_->isInput ? bestPin  : pin;
+        NodeComponent* dstNode = pending_->isInput ? node     : bestNode;
+        int            dstPin  = pending_->isInput ? pin      : bestPin;
+
+        bool ok = engine_.connect(srcNode->nodeId(), srcPin, dstNode->nodeId(), dstPin);
+        dbg_ += ok ? " CONNECT OK" : " CONNECT FAILED";
+        if (ok)
+            connections_.push_back({ srcNode->nodeId(), dstNode->nodeId(), srcPin, dstPin });
+    }
+    else
+    {
+        dbg_ += " NO TARGET";
     }
 
     pending_.reset();

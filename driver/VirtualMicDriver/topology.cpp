@@ -96,7 +96,7 @@ CMiniportTopologySignally::GetDescription(_Out_ PPCFILTER_DESCRIPTOR* OutDescrip
                 SIZEOF_ARRAY(gTopoBridgeRanges), gTopoBridgeRanges,
                 KSPIN_DATAFLOW_OUT,
                 KSPIN_COMMUNICATION_NONE,
-                (GUID*)&KSNODETYPE_ANY,
+                nullptr,                                      // bridge pin: no category
                 nullptr, 0
             }
         },
@@ -125,9 +125,9 @@ CMiniportTopologySignally::GetDescription(_Out_ PPCFILTER_DESCRIPTOR* OutDescrip
     {
         0, nullptr,
         sizeof(PCPIN_DESCRIPTOR), SIZEOF_ARRAY(pins), pins,
-        0, nullptr,                                   // no nodes
-        SIZEOF_ARRAY(connections), connections,
-        0, nullptr
+        0, 0, nullptr,                                // NodeSize, NodeCount, Nodes
+        SIZEOF_ARRAY(connections), connections,       // ConnectionCount, Connections
+        0, nullptr                                    // CategoryCount, Categories
     };
 
     *OutDescriptor = &filterDesc;

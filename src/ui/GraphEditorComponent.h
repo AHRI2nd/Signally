@@ -37,11 +37,25 @@ public:
     void loadSession(const juce::File& file);
     void clearSession();
 
+    // Called by NodeComponent during a pin drag to update the live preview line.
+    void updatePendingDrag(juce::Point<float> worldPos);
+
 protected:
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;
+    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
     void timerCallback() override;
+    bool keyPressed(const juce::KeyPress& key) override;
+
+public:
+    // Zoom the canvas (Ctrl + / Ctrl - / Ctrl 0). Clamped to a sensible range.
+    void setZoom(float newZoom);
+    float getZoom() const { return zoom_; }
+
+    // Resize the canvas so it always fills the viewport at the current zoom and
+    // still contains every node (call after zoom / add / move).
+    void updateCanvasBounds();
 
 private:
     struct Connection
@@ -103,6 +117,9 @@ private:
         juce::Point<float> currentPos;
     };
     std::optional<PendingConn> pending_;
+
+    float zoom_ = 1.0f;
+    juce::String dbg_;   // TEMP: connection diagnostics overlay
 
     juce::KnownPluginList pluginList_;
     juce::AudioPluginFormatManager formatManager_;

@@ -1,6 +1,8 @@
 #pragma once
 #include <JuceHeader.h>
 #include <functional>
+#include <atomic>
+#include <memory>
 
 class GraphEditorComponent;
 
@@ -15,9 +17,21 @@ protected:
     void resized() override;
 
 private:
-    void scanPlugins();
+    // Kick off a background scan of the system VST3 folders (non-blocking).
+    void scanPluginsAsync();
+    void doScan(juce::Thread& thread);   // runs on the scan thread
     void onAddPlugin();
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
+
+    // Background scan thread (keeps the UI responsive during discovery).
+    struct Scanner : juce::Thread
+    {
+        VST3BrowserPanel& owner;
+        explicit Scanner(VST3BrowserPanel& o) : juce::Thread("VST3Scan"), owner(o) {}
+        void run() override { owner.doScan(*this); }
+    };
+    std::unique_ptr<Scanner> scanner_;
+    std::atomic<bool>        scanning_{ false };
 
     GraphEditorComponent&         editor_;
     juce::AudioPluginFormatManager formatManager_;
@@ -38,7 +52,7 @@ private:
         }
         void paintListBoxItem(int row, juce::Graphics& g, int w, int h, bool sel) override
         {
-            if (sel) g.fillAll(juce::Colour(0xff2d4a6b));
+            if (sel) g.fillAll(juce::Colour(0xff3a4150));
             g.setColour(juce::Colours::white);
             g.setFont(11.0f);
             if (list && row < list->getNumTypes())

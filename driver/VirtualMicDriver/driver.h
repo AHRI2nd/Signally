@@ -42,9 +42,18 @@ extern SIGNALLY_SHARED g_SignallyShared;
 //   non-zero → only that PID may open the pin; others are denied (max isolation)
 #define SIGNALLY_ALLOWED_PID_INDEX 0
 
+// The app advertises the OS-exposed output bit depth (16/24/32) in Reserved[1].
+// The ring is always float32; the capture stream converts to this depth.
+// 0 or 32 → IEEE float passthrough; 16/24 → PCM conversion.
+#define SIGNALLY_BITDEPTH_INDEX    1
+
+// ── Kernel C++ placement new/delete (defined in adapter.cpp) ──────────────────
+void* __cdecl operator new(size_t size, POOL_FLAGS poolFlags, ULONG tag);
+void  __cdecl operator delete(void* ptr, POOL_FLAGS poolFlags, ULONG tag);
+
 // ── Driver entry points (adapter.cpp) ─────────────────────────────────────────
-DRIVER_INITIALIZE DriverEntry;
-DRIVER_UNLOAD     DriverUnload;
+EXTERN_C DRIVER_INITIALIZE DriverEntry;
+EXTERN_C DRIVER_UNLOAD     DriverUnload;
 
 NTSTATUS AddDevice(PDRIVER_OBJECT DriverObject, PDEVICE_OBJECT PhysicalDeviceObject);
 NTSTATUS StartDevice(_In_ PDEVICE_OBJECT DeviceObject, _In_ PIRP Irp, _In_ PRESOURCELIST ResourceList);

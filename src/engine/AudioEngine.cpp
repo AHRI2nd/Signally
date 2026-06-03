@@ -339,6 +339,12 @@ bool AudioEngine::start()
         // Not fatal — virtual mic may not be installed yet
         juce::Logger::writeToLog("VirtualMicBridge: driver not found, virtual mic disabled");
     }
+    else
+    {
+        // Publish the active format so the driver exposes a matching capture
+        // format. Mix rate == virtual-mic rate (no resampling on this path).
+        vmicBridge_.setFormat(static_cast<int>(sampleRate_), micBitDepth_);
+    }
 
     graph_.prepare(sampleRate_, blockSize_);
 

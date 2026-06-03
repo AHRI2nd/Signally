@@ -4,8 +4,12 @@ OutputDeviceNode::OutputDeviceNode(int numChannels)
     : numChannels_(numChannels)
 {
     ring_.assign(static_cast<size_t>(numChannels * kRingFrames), 0.0f);
-    setBusesLayout({ juce::AudioChannelSet::disabled(),
-                     juce::AudioChannelSet::canonicalChannelSet(numChannels) });
+    // An output device is a graph SINK — it must expose INPUT channels (and no
+    // outputs) so upstream nodes can connect into it. (Previously this was set as
+    // an output bus, leaving the node with 0 input channels → connections failed.)
+    juce::AudioProcessor::BusesLayout layout;
+    layout.inputBuses.add(juce::AudioChannelSet::canonicalChannelSet(numChannels));
+    setBusesLayout(layout);
 }
 
 void OutputDeviceNode::prepareToPlay(double, int blockSize)

@@ -12,43 +12,67 @@
 #include "driver.h"
 #include <ksmedia.h>
 
-// ── Capture format: 48 kHz, 32-bit float, stereo ─────────────────────────────
-static KSDATAFORMAT_WAVEFORMATEX gCaptureFormat =
+// ── Active format read from the shared header (written by the app) ────────────
+static ULONG SignallyRate()
 {
-    {
-        sizeof(KSDATAFORMAT_WAVEFORMATEX),
-        0,
-        sizeof(WAVEFORMATEX),
-        { STATICGUIDOF(KSDATAFORMAT_TYPE_AUDIO) },
-        { STATICGUIDOF(KSDATAFORMAT_SUBTYPE_IEEE_FLOAT) },
-        { STATICGUIDOF(KSDATAFORMAT_SPECIFIER_WAVEFORMATEX) }
-    },
-    {
-        WAVE_FORMAT_IEEE_FLOAT,
-        SIGNALLY_CHANNELS,
-        SIGNALLY_SAMPLE_RATE,
-        SIGNALLY_SAMPLE_RATE * SIGNALLY_CHANNELS * sizeof(float),
-        SIGNALLY_CHANNELS * sizeof(float),
-        32,
-        0
-    }
+    auto* h = g_SignallyShared.Header;
+    return (h && h->SampleRate) ? h->SampleRate : SIGNALLY_SAMPLE_RATE;
+}
+static ULONG SignallyBits()
+{
+    auto* h = g_SignallyShared.Header;
+    ULONG b = h ? h->Reserved[SIGNALLY_BITDEPTH_INDEX] : 0;
+    return (b == 16 || b == 24 || b == 32) ? b : 32;
+}
+
+// Template formats (GUIDs filled at compile time via STATICGUIDOF; numeric
+// fields are patched at runtime in DataRangeIntersection). 48 kHz placeholder rate.
+static KSDATAFORMAT_WAVEFORMATEX gFmtFloat =
+{
+    { sizeof(KSDATAFORMAT_WAVEFORMATEX), 0, 0, 0,
+      { STATICGUIDOF(KSDATAFORMAT_TYPE_AUDIO) },
+      { STATICGUIDOF(KSDATAFORMAT_SUBTYPE_IEEE_FLOAT) },
+      { STATICGUIDOF(KSDATAFORMAT_SPECIFIER_WAVEFORMATEX) } },
+    { WAVE_FORMAT_IEEE_FLOAT, SIGNALLY_CHANNELS, SIGNALLY_SAMPLE_RATE,
+      SIGNALLY_SAMPLE_RATE * SIGNALLY_CHANNELS * 4, (WORD)(SIGNALLY_CHANNELS * 4), 32, 0 }
+};
+static KSDATAFORMAT_WAVEFORMATEX gFmtPcm16 =
+{
+    { sizeof(KSDATAFORMAT_WAVEFORMATEX), 0, 0, 0,
+      { STATICGUIDOF(KSDATAFORMAT_TYPE_AUDIO) },
+      { STATICGUIDOF(KSDATAFORMAT_SUBTYPE_PCM) },
+      { STATICGUIDOF(KSDATAFORMAT_SPECIFIER_WAVEFORMATEX) } },
+    { WAVE_FORMAT_PCM, SIGNALLY_CHANNELS, SIGNALLY_SAMPLE_RATE,
+      SIGNALLY_SAMPLE_RATE * SIGNALLY_CHANNELS * 2, (WORD)(SIGNALLY_CHANNELS * 2), 16, 0 }
+};
+static KSDATAFORMAT_WAVEFORMATEX gFmtPcm24 =
+{
+    { sizeof(KSDATAFORMAT_WAVEFORMATEX), 0, 0, 0,
+      { STATICGUIDOF(KSDATAFORMAT_TYPE_AUDIO) },
+      { STATICGUIDOF(KSDATAFORMAT_SUBTYPE_PCM) },
+      { STATICGUIDOF(KSDATAFORMAT_SPECIFIER_WAVEFORMATEX) } },
+    { WAVE_FORMAT_PCM, SIGNALLY_CHANNELS, SIGNALLY_SAMPLE_RATE,
+      SIGNALLY_SAMPLE_RATE * SIGNALLY_CHANNELS * 3, (WORD)(SIGNALLY_CHANNELS * 3), 24, 0 }
 };
 
-static KSDATARANGE_AUDIO gCaptureDataRange =
+// Two advertised ranges: PCM (16–24) and IEEE float (32), 44.1–96 kHz, stereo.
+static KSDATARANGE_AUDIO gRangePcm =
 {
-    {
-        sizeof(KSDATARANGE_AUDIO),
-        0, 0, 0,
-        { STATICGUIDOF(KSDATAFORMAT_TYPE_AUDIO) },
-        { STATICGUIDOF(KSDATAFORMAT_SUBTYPE_IEEE_FLOAT) },
-        { STATICGUIDOF(KSDATAFORMAT_SPECIFIER_WAVEFORMATEX) }
-    },
-    SIGNALLY_CHANNELS,           // MaximumChannels
-    32, 32,                      // Min/Max bits per sample
-    SIGNALLY_SAMPLE_RATE,        // MinimumSampleFrequency
-    SIGNALLY_SAMPLE_RATE         // MaximumSampleFrequency
+    { sizeof(KSDATARANGE_AUDIO), 0, 0, 0,
+      { STATICGUIDOF(KSDATAFORMAT_TYPE_AUDIO) },
+      { STATICGUIDOF(KSDATAFORMAT_SUBTYPE_PCM) },
+      { STATICGUIDOF(KSDATAFORMAT_SPECIFIER_WAVEFORMATEX) } },
+    SIGNALLY_CHANNELS, 16, 24, 44100, 96000
 };
-static PKSDATARANGE gCaptureAudioRanges[] = { (PKSDATARANGE)&gCaptureDataRange };
+static KSDATARANGE_AUDIO gRangeFloat =
+{
+    { sizeof(KSDATARANGE_AUDIO), 0, 0, 0,
+      { STATICGUIDOF(KSDATAFORMAT_TYPE_AUDIO) },
+      { STATICGUIDOF(KSDATAFORMAT_SUBTYPE_IEEE_FLOAT) },
+      { STATICGUIDOF(KSDATAFORMAT_SPECIFIER_WAVEFORMATEX) } },
+    SIGNALLY_CHANNELS, 32, 32, 44100, 96000
+};
+static PKSDATARANGE gCaptureAudioRanges[] = { (PKSDATARANGE)&gRangePcm, (PKSDATARANGE)&gRangeFloat };
 
 // Bridge pin uses a raw analog range (connects to the topology filter).
 static KSDATARANGE gBridgeRange = { sizeof(KSDATARANGE) };
@@ -104,6 +128,7 @@ private:
     ULONG                    m_ulNotificationsPerBuffer = 0;
     ULONG                    m_ulNotificationIntervalMs = 0;
     ULONG                    m_ulDmaMovementRate   = 0;   // avg bytes/sec
+    ULONG                    m_ulFrameBytes        = 0;   // bytes/frame (channels * bitDepth/8)
 
     KSSTATE                  m_KsState             = KSSTATE_STOP;
     PEX_TIMER                m_pNotificationTimer  = nullptr;
@@ -120,7 +145,7 @@ private:
     ULONGLONG                m_hnsDPCTimeCarryForward = 0;
     ULONG                    m_byteDisplacementCarryForward = 0;
     LONGLONG                 m_llPacketCounter     = 0;
-    ULONG                    m_ulLastOsReadPacket  = ULONG_MAX;
+    ULONG                    m_ulLastOsReadPacket  = MAXULONG;
     LARGE_INTEGER            m_ullPerformanceCounterFrequency = {};
 
     friend class CMiniportWaveRTSignally;
@@ -252,7 +277,7 @@ CMiniportWaveRTSignally::GetDescription(_Out_ PPCFILTER_DESCRIPTOR* OutDescripto
                 SIZEOF_ARRAY(gBridgeRanges), gBridgeRanges,
                 KSPIN_DATAFLOW_IN,
                 KSPIN_COMMUNICATION_NONE,
-                (GUID*)&KSNODETYPE_ANY,
+                nullptr,                                      // bridge pin: no category
                 nullptr, 0
             }
         }
@@ -268,9 +293,9 @@ CMiniportWaveRTSignally::GetDescription(_Out_ PPCFILTER_DESCRIPTOR* OutDescripto
     {
         0, nullptr,
         sizeof(PCPIN_DESCRIPTOR), SIZEOF_ARRAY(pins), pins,
-        0, nullptr,                                   // no nodes
-        SIZEOF_ARRAY(connections), connections,
-        0, nullptr
+        0, 0, nullptr,                                // NodeSize, NodeCount, Nodes
+        SIZEOF_ARRAY(connections), connections,       // ConnectionCount, Connections
+        0, nullptr                                    // CategoryCount, Categories
     };
 
     *OutDescriptor = &filterDesc;
@@ -291,7 +316,14 @@ CMiniportWaveRTSignally::DataRangeIntersection(
     if (OutputBufferLength == 0) { *ResultantFormatLength = required; return STATUS_BUFFER_OVERFLOW; }
     if (OutputBufferLength < required) return STATUS_BUFFER_TOO_SMALL;
 
-    RtlCopyMemory(ResultantFormat, &gCaptureFormat, required);
+    // Build the active format from the app-published sample rate / bit depth.
+    ULONG rate = SignallyRate();
+    ULONG bits = SignallyBits();
+    KSDATAFORMAT_WAVEFORMATEX fmt = (bits == 32) ? gFmtFloat : (bits == 24) ? gFmtPcm24 : gFmtPcm16;
+    fmt.WaveFormatEx.nSamplesPerSec  = rate;
+    fmt.WaveFormatEx.nAvgBytesPerSec = rate * fmt.WaveFormatEx.nBlockAlign;
+
+    RtlCopyMemory(ResultantFormat, &fmt, required);
     *ResultantFormatLength = required;
     return STATUS_SUCCESS;
 }
@@ -364,6 +396,7 @@ CMiniportWaveRTStreamSignally::Init(
 
     auto* wfx = &reinterpret_cast<PKSDATAFORMAT_WAVEFORMATEX>(DataFormat)->WaveFormatEx;
     m_ulDmaMovementRate = wfx->nAvgBytesPerSec;
+    m_ulFrameBytes      = wfx->nBlockAlign;   // channels * bitDepth/8 (negotiated format)
 
     m_pNotificationTimer = ExAllocateTimer(SignallyTimerNotify, this, EX_TIMER_HIGH_RESOLUTION);
     if (m_pNotificationTimer == nullptr)
@@ -398,7 +431,7 @@ CMiniportWaveRTStreamSignally::AllocateAudioBuffer(
 {
     PAGED_CODE();
 
-    const ULONG frameBytes = SIGNALLY_CHANNELS * sizeof(float);
+    const ULONG frameBytes = m_ulFrameBytes ? m_ulFrameBytes : (SIGNALLY_CHANNELS * sizeof(float));
     if (RequestedSize == 0 || RequestedSize < frameBytes)
         return STATUS_UNSUCCESSFUL;
     RequestedSize -= RequestedSize % frameBytes;
@@ -540,7 +573,7 @@ CMiniportWaveRTStreamSignally::SetState(_In_ KSSTATE State)
         case KSSTATE_STOP:
             KeAcquireSpinLock(&m_PositionSpinLock, &old);
             m_llPacketCounter = 0; m_ullPlayPosition = 0; m_ullWritePosition = 0;
-            m_ullLinearPosition = 0; m_ulLastOsReadPacket = ULONG_MAX;
+            m_ullLinearPosition = 0; m_ulLastOsReadPacket = MAXULONG;
             KeReleaseSpinLock(&m_PositionSpinLock, old);
             break;
 
@@ -571,39 +604,34 @@ CMiniportWaveRTStreamSignally::SetState(_In_ KSSTATE State)
 void CMiniportWaveRTStreamSignally::FillCaptureFromRing(ULONG byteDisplacement)
 {
     PSIGNALLY_SHARED_HEADER hdr  = g_SignallyShared.Header;
-    FLOAT*                  ring = g_SignallyShared.RingBuffer;
-    if (m_pDmaBuffer == nullptr || m_ulDmaBufferSize == 0)
+    if (m_pDmaBuffer == nullptr || m_ulDmaBufferSize == 0 || m_ulFrameBytes == 0)
         return;
 
-    const ULONG frameBytes = SIGNALLY_CHANNELS * sizeof(float);
-    ULONG bufferOffset = (ULONG)(m_ullLinearPosition % m_ulDmaBufferSize);
+    // The app encodes the ring in the negotiated OS format (16/24/32), which is
+    // exactly the WaveRT buffer format — so this is a plain byte-wise copy
+    // (no FP / no kernel FPU). One frame = m_ulFrameBytes bytes.
+    const ULONG frameBytes = m_ulFrameBytes;
+    BYTE*       ring        = reinterpret_cast<BYTE*>(g_SignallyShared.RingBuffer);
+    ULONG       bufferOffset = (ULONG)(m_ullLinearPosition % m_ulDmaBufferSize);
 
     LONG wp = hdr ? hdr->WritePos : 0;
     LONG rp = hdr ? hdr->ReadPos  : 0;
 
     while (byteDisplacement >= frameBytes)
     {
-        ULONG run = min(byteDisplacement, m_ulDmaBufferSize - bufferOffset);
-        ULONG frames = run / frameBytes;
-        FLOAT* dst = reinterpret_cast<FLOAT*>(m_pDmaBuffer + bufferOffset);
-
-        for (ULONG f = 0; f < frames; ++f)
+        BYTE* dst = m_pDmaBuffer + bufferOffset;
+        if (hdr && ring && rp != wp)
         {
-            if (hdr && ring && rp != wp)
-            {
-                const ULONG srcFrame = (ULONG)((ULONG)rp % SIGNALLY_RING_FRAMES);
-                const FLOAT* src = ring + (SIZE_T)srcFrame * SIGNALLY_CHANNELS;
-                for (ULONG c = 0; c < SIGNALLY_CHANNELS; ++c) dst[c] = src[c];
-                ++rp;
-            }
-            else
-            {
-                for (ULONG c = 0; c < SIGNALLY_CHANNELS; ++c) dst[c] = 0.0f; // underrun → silence
-            }
-            dst += SIGNALLY_CHANNELS;
+            const ULONG srcFrame = (ULONG)((ULONG)rp % SIGNALLY_RING_FRAMES);
+            RtlCopyMemory(dst, ring + (SIZE_T)srcFrame * frameBytes, frameBytes);
+            ++rp;
         }
-        bufferOffset = (bufferOffset + frames * frameBytes) % m_ulDmaBufferSize;
-        byteDisplacement -= frames * frameBytes;
+        else
+        {
+            RtlZeroMemory(dst, frameBytes); // underrun → silence
+        }
+        bufferOffset = (bufferOffset + frameBytes) % m_ulDmaBufferSize;
+        byteDisplacement -= frameBytes;
     }
 
     if (hdr) hdr->ReadPos = rp;  // publish how much of the ring we consumed
@@ -641,7 +669,7 @@ CMiniportWaveRTStreamSignally::GetReadPacket(
     LONGLONG packetCounter = m_llPacketCounter;
     KeReleaseSpinLock(&m_PositionSpinLock, old);
 
-    ULONG available = LODWORD(packetCounter - 1);
+    ULONG available = (ULONG)(packetCounter - 1);
     if (available == m_ulLastOsReadPacket)
         return STATUS_DEVICE_NOT_READY;
 

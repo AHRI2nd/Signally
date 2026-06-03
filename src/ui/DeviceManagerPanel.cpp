@@ -21,7 +21,7 @@ DeviceManagerPanel::DeviceManagerPanel(AudioEngine& engine, GraphEditorComponent
     addAndMakeVisible(outputList_);
 
     auto setupBtn = [this](juce::TextButton& btn) {
-        btn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1d3557));
+        btn.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff343b47));
         btn.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
         addAndMakeVisible(btn);
     };

@@ -1,11 +1,11 @@
 #include "NodeComponent.h"
 #include "GraphEditorComponent.h"
 
-static const juce::Colour kHeaderColour  { 0xff2d4a6b };
-static const juce::Colour kBodyColour    { 0xff1a2a3a };
-static const juce::Colour kPinInputColour { 0xff4fc3f7 };
-static const juce::Colour kPinOutputColour{ 0xffffa726 };
-static const juce::Colour kBorderColour  { 0xff3d6a9e };
+static const juce::Colour kHeaderColour  { 0xff363d4a };  // slate header
+static const juce::Colour kBodyColour    { 0xff282d36 };  // slate body
+static const juce::Colour kPinInputColour { 0xff4ec9b0 };  // teal (inputs)
+static const juce::Colour kPinOutputColour{ 0xff6ea8fe };  // blue (outputs)
+static const juce::Colour kBorderColour  { 0xff404857 };
 
 NodeComponent::NodeComponent(GraphEditorComponent& editor,
                              NodeID nodeId,
@@ -22,57 +22,71 @@ NodeComponent::NodeComponent(GraphEditorComponent& editor,
 
 juce::Point<float> NodeComponent::getPinPosition(int channelIndex, bool isInput) const
 {
-    float x = isInput ? 0.0f : static_cast<float>(getWidth());
+    // Inset the pins slightly so their full hit area is inside the node bounds
+    // (a pin on x==0/width would have half its circle outside the component and
+    // would not receive mouse clicks).
+    float x = isInput ? (kPinRadius + 2.0f)
+                      : static_cast<float>(getWidth()) - (kPinRadius + 2.0f);
     float y = static_cast<float>(kHeaderHeight + kPinSpacing * (channelIndex + 1));
     return getPosition().toFloat() + juce::Point<float>(x, y);
 }
 
 void NodeComponent::paint(juce::Graphics& g)
 {
-    auto bounds = getLocalBounds().toFloat().reduced(1.0f);
+    auto       bounds = getLocalBounds().toFloat().reduced(2.0f);
+    const float radius = 8.0f;
+    const bool  hov    = isMouseOver(true);
 
-    // Body
-    g.setColour(kBodyColour);
-    g.fillRoundedRectangle(bounds, 6.0f);
+    // Drop shadow
+    g.setColour(juce::Colours::black.withAlpha(0.40f));
+    g.fillRoundedRectangle(bounds.translated(0.0f, 2.5f), radius);
 
-    // Border
-    g.setColour(isMouseOver() ? kBorderColour.brighter(0.3f) : kBorderColour);
-    g.drawRoundedRectangle(bounds, 6.0f, 1.5f);
+    // Body gradient
+    g.setGradientFill(juce::ColourGradient(
+        kBodyColour.brighter(0.07f), bounds.getTopLeft(),
+        kBodyColour.darker(0.18f),  bounds.getBottomLeft(), false));
+    g.fillRoundedRectangle(bounds, radius);
 
-    // Header
-    juce::Rectangle<float> header(bounds.getX(), bounds.getY(),
-                                   bounds.getWidth(), kHeaderHeight);
-    g.setColour(kHeaderColour);
-    g.fillRoundedRectangle(header, 6.0f);
-    g.fillRect(header.withTrimmedTop(4.0f));
+    // Header gradient (top-rounded only)
+    juce::Rectangle<float> header(bounds.getX(), bounds.getY(), bounds.getWidth(), (float) kHeaderHeight);
+    juce::Path hp;
+    hp.addRoundedRectangle(header.getX(), header.getY(), header.getWidth(), header.getHeight(),
+                           radius, radius, true, true, false, false);
+    g.setGradientFill(juce::ColourGradient(
+        kHeaderColour.brighter(0.12f), header.getTopLeft(),
+        kHeaderColour.darker(0.10f),  header.getBottomLeft(), false));
+    g.fillPath(hp);
 
+    // Border (accent when hovered)
+    g.setColour(hov ? kPinOutputColour.withAlpha(0.85f) : kBorderColour);
+    g.drawRoundedRectangle(bounds, radius, 1.5f);
+
+    // Title
     g.setColour(juce::Colours::white);
-    g.setFont(juce::Font(12.0f, juce::Font::bold));
-    g.drawText(name_, header.toNearestInt(), juce::Justification::centred);
+    g.setFont(juce::Font(12.5f, juce::Font::bold));
+    g.drawText(name_, header.toNearestInt().reduced(10, 0), juce::Justification::centredLeft);
 
-    // Input pins
-    for (int i = 0; i < numInputs_; ++i)
+    // Pins (+ channel index labels)
+    auto drawPin = [&](int i, bool isInput)
     {
-        auto pos = getPinPosition(i, true) - getPosition().toFloat();
-        g.setColour(kPinInputColour);
-        g.fillEllipse(pos.x - kPinRadius, pos.y - kPinRadius,
-                      kPinRadius * 2, kPinRadius * 2);
-        g.setColour(kBorderColour);
-        g.drawEllipse(pos.x - kPinRadius, pos.y - kPinRadius,
-                      kPinRadius * 2, kPinRadius * 2, 1.0f);
-    }
+        auto  pos = getPinPosition(i, isInput) - getPosition().toFloat();
+        auto  col = isInput ? kPinInputColour : kPinOutputColour;
+        float r   = kPinRadius + (hov ? 1.0f : 0.0f);
 
-    // Output pins
-    for (int i = 0; i < numOutputs_; ++i)
-    {
-        auto pos = getPinPosition(i, false) - getPosition().toFloat();
-        g.setColour(kPinOutputColour);
-        g.fillEllipse(pos.x - kPinRadius, pos.y - kPinRadius,
-                      kPinRadius * 2, kPinRadius * 2);
-        g.setColour(kBorderColour);
-        g.drawEllipse(pos.x - kPinRadius, pos.y - kPinRadius,
-                      kPinRadius * 2, kPinRadius * 2, 1.0f);
-    }
+        g.setColour(col);
+        g.fillEllipse(pos.x - r, pos.y - r, r * 2, r * 2);
+        g.setColour(juce::Colours::white.withAlpha(0.85f));
+        g.drawEllipse(pos.x - r, pos.y - r, r * 2, r * 2, 1.2f);
+
+        g.setColour(juce::Colours::lightgrey);
+        g.setFont(9.0f);
+        if (isInput)
+            g.drawText(juce::String(i), (int) pos.x + 9, (int) pos.y - 7, 22, 14, juce::Justification::left);
+        else
+            g.drawText(juce::String(i), (int) pos.x - 31, (int) pos.y - 7, 22, 14, juce::Justification::right);
+    };
+    for (int i = 0; i < numInputs_;  ++i) drawPin(i, true);
+    for (int i = 0; i < numOutputs_; ++i) drawPin(i, false);
 }
 
 int NodeComponent::pinHitTest(juce::Point<int> pos, bool& isInput) const
@@ -125,12 +139,13 @@ void NodeComponent::mouseDrag(const juce::MouseEvent& e)
 {
     if (draggingPin_ >= 0)
     {
-        // The GraphEditorComponent handles the preview line
-        editor_.repaint();
+        // Feed the live mouse position so the editor draws the preview line.
+        editor_.updatePendingDrag(getPosition().toFloat() + e.position);
     }
     else
     {
         dragger_.dragComponent(this, e, &constrainer_);
+        editor_.updateCanvasBounds();
         editor_.repaint();
     }
 }

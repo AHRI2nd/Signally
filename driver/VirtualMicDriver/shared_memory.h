@@ -13,9 +13,9 @@ typedef struct _SIGNALLY_SHARED_HEADER
 {
     volatile LONG WritePos;   // frames written by user-mode app
     volatile LONG ReadPos;    // frames consumed by driver DMA callback
-    ULONG SampleRate;
-    ULONG Channels;
-    ULONG Reserved[4];
+    ULONG SampleRate;         // active mix/capture sample rate (written by the app)
+    ULONG Channels;           // active channel count (written by the app)
+    ULONG Reserved[4];        // [0]=allowed PID, [1]=OS output bit depth (16/24/32); see driver.h
 } SIGNALLY_SHARED_HEADER, *PSIGNALLY_SHARED_HEADER;
 #pragma pack(pop)
 

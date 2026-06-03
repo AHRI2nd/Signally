@@ -72,6 +72,15 @@ public:
 
     VirtualMicBridge& virtualMicBridge() { return vmicBridge_; }
 
+    // ── Global audio format ───────────────────────────────────────────────
+    // Set before start(). The mix sample rate is shared by the graph and the
+    // virtual microphone (no resampling between them); bit depth is the
+    // virtual-mic OS-exposed output depth (16/24/32), forwarded to the driver.
+    void   setSampleRate(double sr)  { sampleRate_ = sr; }
+    double getSampleRate() const     { return sampleRate_; }
+    void   setMicBitDepth(int bits)  { micBitDepth_ = bits; }
+    int    getMicBitDepth() const    { return micBitDepth_; }
+
     // Listener called on the message thread for errors.
     std::function<void(const juce::String&)> onError;
 
@@ -109,6 +118,7 @@ private:
     HANDLE              mixShutdown_   = nullptr;
     double              sampleRate_    = 48000.0;
     int                 blockSize_     = 480;
+    int                 micBitDepth_   = 32;   // virtual-mic OS-exposed output depth (16/24/32)
     juce::AudioBuffer<float> mixBuffer_;
     juce::MidiBuffer         mixMidi_;
 
