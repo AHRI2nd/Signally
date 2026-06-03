@@ -81,6 +81,7 @@
   <ItemGroup>
     <ClCompile Include="adapter.cpp" />
     <ClCompile Include="miniport.cpp" />
+    <ClCompile Include="topology.cpp" />
   </ItemGroup>
 
   <ItemGroup>

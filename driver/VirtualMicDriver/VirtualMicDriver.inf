@@ -1,12 +1,13 @@
-; Signally Virtual Microphone Driver
-; Installs a WDM capture-only audio endpoint visible as a microphone.
+; Signally Virtual Microphone Driver (WaveRT)
+; Installs a capture-only audio endpoint visible as a microphone.
+; Two KS filters: Topology (mic endpoint) + WaveRT (capture stream).
 
 [Version]
 Signature   = "$Windows NT$"
 Class       = MEDIA
-ClassGUID   = {4D36E96C-E325-11CE-BFC1-08002BE10318}
+ClassGUID   = {4d36e96c-e325-11ce-bfc1-08002be10318}
 Provider    = %ManufacturerName%
-DriverVer   = 06/02/2026,1.0.0.1
+DriverVer   = 06/03/2026,1.0.0.2
 CatalogFile = VirtualMicDriver.cat
 PnpLockdown = 1
 
@@ -16,24 +17,15 @@ PnpLockdown = 1
 [Standard.NTamd64]
 %DeviceName% = VirtualMic_Install, Root\VirtualMicDriver
 
+; ── Install ───────────────────────────────────────────────────────────────────
 [VirtualMic_Install.NTamd64]
-Include    = ks.inf, wdmaudio.inf
-Needs      = KS.Registration, WDMAUDIO.Registration
-CopyFiles  = VirtualMic.CopyFiles
-AddReg     = VirtualMic.AddReg
+CopyFiles = VirtualMic.CopyFiles
 
 [VirtualMic.CopyFiles]
 VirtualMicDriver.sys
 
-[VirtualMic.AddReg]
-; Register as audio capture endpoint
-HKR,,AssociatedFilters,,"wdmaud,swmidi,redbook"
-HKR,,Driver,,VirtualMicDriver.sys
-HKR,,NTMPDriver,,"VirtualMicDriver.sys,sbemul.sys"
-HKR,Drivers,SubClasses,,"wave,midi,aux"
-HKR,Drivers\wave\wdmaud.drv,Driver,,wdmaud.drv
-HKR,Drivers\wave\wdmaud.drv,Description,,%DeviceName%
-HKLM,SOFTWARE\Microsoft\Windows NT\CurrentVersion\Drivers32,wave1,,wdmaud.drv
+[DestinationDirs]
+VirtualMic.CopyFiles = 12   ; %SystemRoot%\System32\drivers
 
 [VirtualMic_Install.NTamd64.Services]
 AddService = VirtualMicDriver, 0x00000002, VirtualMic.ServiceInstall
@@ -45,21 +37,27 @@ StartType     = 3      ; SERVICE_DEMAND_START
 ErrorControl  = 1      ; SERVICE_ERROR_NORMAL
 ServiceBinary = %12%\VirtualMicDriver.sys
 
+; ── KS interface registration ────────────────────────────────────────────────
 [VirtualMic_Install.NTamd64.Interfaces]
-AddInterface = %KSCATEGORY_AUDIO%,         %KSNAME_Wave%, VirtualMic.Interface
-AddInterface = %KSCATEGORY_CAPTURE%,       %KSNAME_Wave%, VirtualMic.Interface
-AddInterface = %KSCATEGORY_AUDIO_DEVICE%,  %KSNAME_Wave%, VirtualMic.Interface
+AddInterface = %KSCATEGORY_AUDIO%,    %KSNAME_Wave%,     VirtualMic.I.Wave
+AddInterface = %KSCATEGORY_CAPTURE%,  %KSNAME_Wave%,     VirtualMic.I.Wave
+AddInterface = %KSCATEGORY_REALTIME%, %KSNAME_Wave%,     VirtualMic.I.Wave
+AddInterface = %KSCATEGORY_AUDIO%,    %KSNAME_Topology%, VirtualMic.I.Topo
+AddInterface = %KSCATEGORY_TOPOLOGY%, %KSNAME_Topology%, VirtualMic.I.Topo
 
-[VirtualMic.Interface]
-AddReg = VirtualMic.Interface.AddReg
+[VirtualMic.I.Wave]
+AddReg = VirtualMic.I.Wave.AddReg
+[VirtualMic.I.Wave.AddReg]
+HKR,,CLSID,,%Proxy.CLSID%
+HKR,,FriendlyName,,%Wave.FriendlyName%
 
-[VirtualMic.Interface.AddReg]
+[VirtualMic.I.Topo]
+AddReg = VirtualMic.I.Topo.AddReg
+[VirtualMic.I.Topo.AddReg]
+HKR,,CLSID,,%Proxy.CLSID%
 HKR,,FriendlyName,,%MicName%
-HKR,,CLSID,,{17CCA71B-ECD7-11D0-B908-00A0C9223196}
 
-[DestinationDirs]
-VirtualMic.CopyFiles = 12   ; %SystemRoot%\System32\drivers
-
+; ── Source media ──────────────────────────────────────────────────────────────
 [SourceDisksNames]
 1 = %DiskName%
 
@@ -72,7 +70,14 @@ DeviceName        = "Signally Virtual Audio Device"
 MicName           = "Signally Virtual Microphone"
 ServiceName       = "Signally Virtual Microphone Driver"
 DiskName          = "Signally Driver Disk"
+Wave.FriendlyName = "Signally Virtual Microphone (Wave)"
+
 KSNAME_Wave       = "Wave"
-KSCATEGORY_AUDIO  = "{6994AD04-93EF-11D0-A3CC-00A0C9223196}"
-KSCATEGORY_CAPTURE= "{65E8773D-8F56-11D0-A3B9-00A0C9223196}"
-KSCATEGORY_AUDIO_DEVICE = "{FBF6F530-07B9-11D2-A71E-0000F8004788}"
+KSNAME_Topology   = "Topology"
+
+; KS proxy + category GUIDs
+Proxy.CLSID         = "{17CCA71B-ECD7-11D0-B908-00A0C9223196}"
+KSCATEGORY_AUDIO    = "{6994AD04-93EF-11D0-A3CC-00A0C9223196}"
+KSCATEGORY_CAPTURE  = "{65E8773D-8F56-11D0-A3B9-00A0C9223196}"
+KSCATEGORY_REALTIME = "{EB115FFC-10C8-4964-831D-6DCB02E6F23F}"
+KSCATEGORY_TOPOLOGY = "{DDA54A40-1E4C-11D1-A050-405705C10000}"

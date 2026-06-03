@@ -132,39 +132,76 @@ AddDevice(
         g_SignallyShared.WriteEvent = writeEvent;
     }
 
-    // Let PortCls create the FDO and call our StartDevice
+    // Let PortCls create the FDO and call our StartDevice.
+    // MaxObjects = 2 (Wave + Topology subdevices).
     status = PcAddAdapterDevice(DriverObject, PhysicalDeviceObject,
                                  PCPFNSTARTDEVICE(StartDevice),
-                                 1, 0);
+                                 2, 0);
     return status;
 }
 
-// Forward declaration (miniport.cpp provides CreateMiniportTopology/Wavecyclic)
+// ── Subdevice install helper ──────────────────────────────────────────────────
+static NTSTATUS
+InstallSubdevice(
+    _In_  PDEVICE_OBJECT DeviceObject,
+    _In_  PIRP           Irp,
+    _In_  PWSTR          Name,
+    _In_  REFGUID        PortClassId,
+    _In_  NTSTATUS     (*CreateMiniport)(PUNKNOWN*, REFCLSID, PUNKNOWN, POOL_FLAGS),
+    _Out_ PUNKNOWN*      OutPort)
+{
+    *OutPort = nullptr;
+
+    PPORT port = nullptr;
+    NTSTATUS status = PcNewPort(&port, PortClassId);
+    if (!NT_SUCCESS(status)) return status;
+
+    PUNKNOWN miniport = nullptr;
+    status = CreateMiniport(&miniport, GUID_NULL, nullptr, POOL_FLAG_NON_PAGED);
+    if (!NT_SUCCESS(status)) { port->Release(); return status; }
+
+    status = port->Init(DeviceObject, Irp, miniport, nullptr, nullptr);
+    miniport->Release();
+    if (!NT_SUCCESS(status)) { port->Release(); return status; }
+
+    status = PcRegisterSubdevice(DeviceObject, Name, port);
+    if (!NT_SUCCESS(status)) { port->Release(); return status; }
+
+    // Hand the port (as IUnknown) back so the caller can wire the physical
+    // connection; caller owns this reference.
+    port->QueryInterface(IID_IUnknown, (PVOID*)OutPort);
+    port->Release();
+    return STATUS_SUCCESS;
+}
+
+// Builds the Topology + WaveRT subdevices and the physical connection between them.
 NTSTATUS StartDevice(
     _In_ PDEVICE_OBJECT DeviceObject,
     _In_ PIRP           Irp,
     _In_ PRESOURCELIST  ResourceList)
 {
-    UNREFERENCED_PARAMETER(Irp);
     UNREFERENCED_PARAMETER(ResourceList);
 
-    // Register the miniport with PortCls
-    PPORT  port     = nullptr;
-    PUNKNOWN miniport = nullptr;
+    PUNKNOWN topoPort = nullptr;
+    PUNKNOWN wavePort = nullptr;
 
-    NTSTATUS status = PcNewPort(&port, CLSID_PortWaveCyclic);
-    if (!NT_SUCCESS(status)) return status;
+    NTSTATUS status = InstallSubdevice(DeviceObject, Irp, SIGNALLY_TOPO_NAME,
+                                       CLSID_PortTopology, CreateMiniportTopologySignally,
+                                       &topoPort);
+    if (!NT_SUCCESS(status)) goto Exit;
 
-    status = CreateMiniport(&miniport, CLSID_MiniportDriverWaveCyclic,
-                             nullptr, NonPagedPoolNx);
-    if (!NT_SUCCESS(status)) { port->Release(); return status; }
+    status = InstallSubdevice(DeviceObject, Irp, SIGNALLY_WAVE_NAME,
+                              CLSID_PortWaveRT, CreateMiniportWaveRTSignally,
+                              &wavePort);
+    if (!NT_SUCCESS(status)) goto Exit;
 
-    status = port->Init(DeviceObject, Irp, miniport, nullptr, nullptr);
-    miniport->Release();
+    // Physical connection: topology bridge pin (0, OUT) → wave bridge pin (1, IN).
+    status = PcRegisterPhysicalConnection(DeviceObject,
+                                          topoPort, 0,
+                                          wavePort, 1);
 
-    if (!NT_SUCCESS(status)) { port->Release(); return status; }
-
-    status = PcRegisterSubdevice(DeviceObject, L"Wave", port);
-    port->Release();
+Exit:
+    if (topoPort) topoPort->Release();
+    if (wavePort) wavePort->Release();
     return status;
 }
